@@ -1930,6 +1930,7 @@ def cmd_clean(cleandir, dryrun):
     items_by_title = {}
     total_size = 0  # in bytes
     have_cleaned = False
+    
 
     # make convenient dict with title/dirname as key
     for item in items:
@@ -1942,6 +1943,7 @@ def cmd_clean(cleandir, dryrun):
             os.makedirs(orphan_root_dir)
 
     info("scanning local directories within '{}'...".format(cleandir))
+    handle_game_renames(cleandir,items,dryrun)    
     for cur_dir in sorted(os.listdir(cleandir)):
         cur_fulldir = os.path.join(cleandir, cur_dir)
         if os.path.isdir(cur_fulldir) and cur_dir not in ORPHAN_DIR_EXCLUDE_LIST:
