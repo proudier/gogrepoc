@@ -338,8 +338,8 @@ def save_resume_manifest(items):
             pprint.pprint(items, width=123, stream=w)
         info('saved resume manifest')                        
     except KeyboardInterrupt:
-        with codecs.open(MANIFEST_FILENAME, 'w', 'utf-8') as w:
-            print('# {} games'.format(len(items)), file=w)
+        with codecs.open(RESUME_MANIFEST_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)-1), file=w)
             pprint.pprint(items, width=123, stream=w)
         info('saved resume manifest')            
         raise
