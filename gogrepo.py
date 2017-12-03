@@ -6,9 +6,9 @@ from __future__ import division
 from __future__ import unicode_literals
 
 __appname__ = 'gogrepo.py'
-__author__ = 'eddie3'
-__version__ = '0.3a'
-__url__ = 'https://github.com/eddie3/gogrepo'
+__author__ = 'eddie3,kalynr'
+__version__ = 'k0.3a'
+__url__ = 'https://github.com/kalanyr/gogrepo'
 
 # imports
 import os
@@ -319,15 +319,30 @@ def load_manifest(filepath=MANIFEST_FILENAME):
 
 def save_manifest(items):
     info('saving manifest...')
-    with codecs.open(MANIFEST_FILENAME, 'w', 'utf-8') as w:
-        print('# {} games'.format(len(items)), file=w)
-        pprint.pprint(items, width=123, stream=w)
-
+    try:
+        with codecs.open(MANIFEST_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)), file=w)
+            pprint.pprint(items, width=123, stream=w)
+        info('saved manifest')
+    except KeyboardInterrupt:
+        with codecs.open(MANIFEST_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)), file=w)
+            pprint.pprint(items, width=123, stream=w)
+        info('saved manifest')            
+        raise
 def save_resume_manifest(items):
     info('saving resume manifest...')
-    with codecs.open(RESUME_MANIFEST_FILENAME, 'w', 'utf-8') as w:
-        print('# {} games'.format(len(items)-1), file=w)
-        pprint.pprint(items, width=123, stream=w)
+    try:
+        with codecs.open(RESUME_MANIFEST_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)-1), file=w)
+            pprint.pprint(items, width=123, stream=w)
+        info('saved resume manifest')                        
+    except KeyboardInterrupt:
+        with codecs.open(MANIFEST_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)), file=w)
+            pprint.pprint(items, width=123, stream=w)
+        info('saved resume manifest')            
+        raise
 
 def load_resume_manifest(filepath=RESUME_MANIFEST_FILENAME):
     info('loading local resume manifest...')
@@ -669,7 +684,8 @@ def is_numeric_id(s):
 
 def process_argv(argv):
     p1 = argparse.ArgumentParser(description='%s (%s)' % (__appname__, __url__), add_help=False)
-    sp1 = p1.add_subparsers(help='commands', dest='cmd', title='commands')
+    sp1 = p1.add_subparsers(help='command', dest='command', title='commands')
+    sp1.required = True
 
     g1 = sp1.add_parser('login', help='Login to GOG and save a local copy of your authenticated cookie')
     g1.add_argument('username', action='store', help='GOG username/email', nargs='?', default=None)
@@ -811,7 +827,7 @@ def process_argv(argv):
     if not args.nolog:
         rootLogger.addHandler(loggingHandler)
 
-    if args.cmd == 'update' or args.cmd == 'download' or args.cmd == 'backup' or args.cmd == 'import' or args.cmd == 'verify':
+    if args.command == 'update' or args.command == 'download' or args.command == 'backup' or args.command == 'import' or args.command == 'verify':
         for lang in args.lang+args.skiplang:  # validate the language
             if lang not in VALID_LANG_TYPES:
                 error('error: specified language "%s" is not one of the valid languages %s' % (lang, VALID_LANG_TYPES))
@@ -1893,18 +1909,19 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
                 if (old_verify != itm.prev_verified): 
                     game_changed = True;
             else:
+                if itm.prev_verified:
+                    itm.prev_verified=False;
+                    game_changed = True
                 info('missing file %s' % itm_dirpath)
                 missing_cnt += 1
         if (game_changed):
             item_idx = item_checkdb(game.id, items)
             if item_idx is not None:
                 items[item_idx] = game
-                save_manifest_needed = True                
+                save_manifest(items)
             else:
                 warn("We are verifying an item that's not in the DB ???")
         
-    if (save_manifest_needed):            
-        save_manifest(items)
     info('')
     info('--totals------------')
     info('known items......... %d' % item_count)
@@ -1985,10 +2002,10 @@ def cmd_clean(cleandir, dryrun):
 def main(args):
     stime = datetime.datetime.now()
 
-    if args.cmd == 'login':
+    if args.command == 'login':
         cmd_login(args.username, args.password)
         return  # no need to see time stats
-    elif args.cmd == 'update':
+    elif args.command == 'update':
         if (args.id):
             args.ids = [args.id]
         if not args.os:    
@@ -2005,7 +2022,7 @@ def main(args):
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)                
         cmd_update(args.os, args.lang, args.skipknown, args.updateonly, args.ids, args.skipids,args.skiphidden,args.installers,args.resumemode,args.strictverify)
-    elif args.cmd == 'download':
+    elif args.command == 'download':
         if (args.id):
             args.ids = [args.id]
         if not args.os:    
@@ -2026,7 +2043,7 @@ def main(args):
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)
         cmd_download(args.savedir, args.skipextras, args.skipids, args.dryrun, args.ids,args.os,args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared)
-    elif args.cmd == 'import':
+    elif args.command == 'import':
         #Hardcode these as false since extras currently do not have MD5s as such skipgames would give nothing and skipextras would change nothing. The logic path and arguments are present in case this changes, though commented out in the case of arguments)
         args.skipgames = False
         args.skipextras = False
@@ -2045,7 +2062,7 @@ def main(args):
             args.skipgalaxy = True
             args.skipshared = True
         cmd_import(args.src_dir, args.dest_dir,args.os,args.lang,args.skipextras,args.skipids,args.ids,args.skipgalaxy,args.skipstandalone,args.skipshared)
-    elif args.cmd == 'verify':
+    elif args.command == 'verify':
         if (args.id):
             args.ids = [args.id]    
         if not args.os:    
@@ -2066,7 +2083,7 @@ def main(args):
         check_filesize = not args.skipsize
         check_zips = not args.skipzip
         cmd_verify(args.gamedir, args.skipextras,args.skipids,check_md5, check_filesize, check_zips, args.delete, args.clean,args.ids,  args.os, args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.forceverify)
-    elif args.cmd == 'backup':
+    elif args.command == 'backup':
         if not args.os:    
             if args.skipos:
                 args.os = [x for x in VALID_OS_TYPES if x not in args.skipos]
@@ -2082,7 +2099,7 @@ def main(args):
             args.skipgalaxy = True
             args.skipshared = True
         cmd_backup(args.src_dir, args.dest_dir,args.skipextras,args.os,args.lang,args.ids,args.skipids,args.skipgalaxy,args.skipstandalone,args.skipshared)
-    elif args.cmd == 'clean':
+    elif args.command == 'clean':
         cmd_clean(args.cleandir, args.dryrun)
 
     etime = datetime.datetime.now()
