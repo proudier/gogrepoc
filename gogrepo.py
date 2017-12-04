@@ -57,12 +57,9 @@ except ImportError:
     from urllib.request import HTTPCookieProcessor, HTTPError, URLError, build_opener, Request
     from itertools import zip_longest
     from io import StringIO
-    
-GENERIC_READ = 0x80000000
-GENERIC_WRITE = 0x40000000
-CREATE_NEW = 0x1    
-OPEN_EXISTING = 0x3
-FILE_BEGIN = 0x0
+
+if (platform.system() == "Windows"):
+    import ctypes.wintypes
 
 # python 2 / 3 renames
 try: input = raw_input
@@ -73,6 +70,14 @@ try:
     from html2text import html2text
 except ImportError:
     def html2text(x): return x
+
+    
+GENERIC_READ = 0x80000000
+GENERIC_WRITE = 0x40000000
+CREATE_NEW = 0x1    
+OPEN_EXISTING = 0x3
+FILE_BEGIN = 0x0
+
 
 # lib mods
 cookiejar.MozillaCookieJar.magic_re = r'.*'  # bypass the hardcoded "Netscape HTTP Cookie File" check
@@ -672,7 +677,14 @@ def deDuplicateName(potentialItem,clashDict):
         clashDict[potentialItem.name] = [(potentialItem.md5,potentialItem.size)]
         return potentialItem.name   
         
-        
+def process_path(path):
+    fpath = path
+    if sys.version_info[0] <= 2:
+        if isinstance(fpath, str):
+            fpath = fpath.decode('utf-8')
+    fpath = os.path.abspath(fpath)
+    raw_fpath = u'\\\\?\\%s' % fpath 
+    return raw_fpath   
 
 def is_numeric_id(s):
     try:
@@ -957,8 +969,9 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
         save_lang_list = lang_list
         lang_list = resumeprops['lang_list']
         save_installers = installers
+        installers = resumeprops['installers']
         save_strict = strict
-        strict = strict
+        strict = resumeprops['strict']
         items = resumedb
         items_count = len(items)
         print_padding = len(str(items_count))
@@ -1197,7 +1210,7 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
         info('resume completed')
         if (resumemode != 'onlyresume'):
             info('returning to specified download request...')
-            cmd_update(save_os_list, save_lang_list, skipknown, updateonly, ids, skipids,skipHidden,save_installers,resumemode)
+            cmd_update(save_os_list, save_lang_list, skipknown, updateonly, ids, skipids,skipHidden,save_installers,resumemode,save_strict)
 
 
 def cmd_import(src_dir, dest_dir,os_list,lang_list,skipextras,skipids,ids,skipgalaxy,skipstandalone,skipshared):
@@ -1493,6 +1506,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
             try:
                 dest_dir = os.path.dirname(path)
                 downloading_dir = os.path.dirname(downloading_path)
+                compat_downloading_path = process_path(downloading_path)
                 with lock:
                     if not os.path.isdir(dest_dir):
                         os.makedirs(dest_dir)
@@ -1509,16 +1523,22 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                             if platform.system() == "Windows":
                                 try:
                                     info("increasing preallocation to '%d' bytes for '%s' " % (sz,downloading_path))
-                                    preH = ctypes.windll.kernel32.CreateFileW(downloading_path, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
+                                    preH = ctypes.windll.kernel32.CreateFileW(compat_downloading_path, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
                                     if preH==-1:
+                                        warn("could not get filehandle")                                    
                                         raise OSError()
-                                    ctypes.windll.kernel32.SetFilePointerEx(preH,sz,None,FILE_BEGIN)    
+                                    c_sz = ctypes.wintypes.LARGE_INTEGER(sz)
+                                    ctypes.windll.kernel32.SetFilePointerEx(preH,c_sz,None,FILE_BEGIN)    
                                     ctypes.windll.kernel32.SetEndOfFile(preH)   
                                     ctypes.windll.kernel32.CloseHandle(preH)   
                                 except:
+                                    log_exception('')                                
                                     warn("preallocation failed")
+                                    if preH != -1:
+                                        info('failed - closing outstanding handle')
+                                        ctypes.windll.kernel32.CloseHandle(preH) 
                             else:
-                                if sys.version_info[0] >= 3 and sys.version.info[1] >= 3:
+                                if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version.info[1] >= 3):
                                     info("increasing preallocation to '%d' bytes for '%s' using posix_fallocate " % (sz,downloading_path))
                                     with open(downloading_path, "ab+") as f:
                                         try:
@@ -1534,17 +1554,24 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                             if file_sz < sz: #preallocate extra space       
                                 if platform.system() == "Windows":
                                     try:
+                                        preH = -1 
                                         info("increasing preallocation to '%d' bytes for '%s' " % (sz,downloading_path))
-                                        preH = ctypes.windll.kernel32.CreateFileW(downloading_path, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
+                                        preH = ctypes.windll.kernel32.CreateFileW(compat_downloading_path, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
                                         if preH==-1:
+                                            warn("could not get filehandle")
                                             raise OSError()
-                                        ctypes.windll.kernel32.SetFilePointerEx(preH,sz,None,FILE_BEGIN)    
+                                        c_sz = ctypes.wintypes.LARGE_INTEGER(sz)
+                                        ctypes.windll.kernel32.SetFilePointerEx(preH,c_sz,None,FILE_BEGIN)    
                                         ctypes.windll.kernel32.SetEndOfFile(preH)   
                                         ctypes.windll.kernel32.CloseHandle(preH)   
                                     except:
+                                        log_exception('')                                
                                         warn("preallocation failed")
+                                        if preH != -1:
+                                            info('failed - closing outstanding handle')
+                                            ctypes.windll.kernel32.CloseHandle(preH) 
                                 else:
-                                    if sys.version_info[0] >= 3 and sys.version.info[1] >= 3:
+                                    if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version.info[1] >= 3):
                                         info("increasing preallocation to '%d' bytes for '%s' using posix_fallocate " % (sz,downloading_path))
                                         with open(downloading_path, "ab+") as f:
                                             try:
@@ -1554,19 +1581,26 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                         else:
                             if platform.system() == "Windows":
                                 try:
-                                    info("preallocatiing '%d' bytes for '%s' " % (sz,downloading_path))
-                                    preH = ctypes.windll.kernel32.CreateFileW(downloading_path, GENERIC_READ | GENERIC_WRITE, 0, None, CREATE_NEW, 0, None)
+                                    preH = -1 
+                                    info("preallocating '%d' bytes for '%s' " % (sz,downloading_path))
+                                    preH = ctypes.windll.kernel32.CreateFileW(compat_downloading_path, GENERIC_READ | GENERIC_WRITE, 0, None, CREATE_NEW, 0, None)
                                     if preH==-1:
+                                        warn("could not get filehandle")
                                         raise OSError()
-                                    ctypes.windll.kernel32.SetFilePointerEx(preH,sz,None,FILE_BEGIN)    
+                                    c_sz = ctypes.wintypes.LARGE_INTEGER(sz)
+                                    ctypes.windll.kernel32.SetFilePointerEx(preH,c_sz,None,FILE_BEGIN)  
                                     ctypes.windll.kernel32.SetEndOfFile(preH)   
                                     ctypes.windll.kernel32.CloseHandle(preH) 
                                     #DEVNULL = open(os.devnull, 'wb')
                                     #subprocess.call(["fsutil","file","createnew",path,str(sz)],stdout=DEVNULL,stderr=DEVNULL)
                                 except:
+                                    log_exception('')                                
                                     warn("preallocation failed")
+                                    if preH != -1:
+                                        info('failed - closing outstanding handle')
+                                        ctypes.windll.kernel32.CloseHandle(preH) 
                             else:
-                                if sys.version_info[0] >= 3 and sys.version.info[1] >= 3:
+                                if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version.info[1] >= 3):
                                     info("attempting preallocating '%d' bytes for '%s' using posix_fallocate " % (sz,downloading_path))
                                     with open(downloading_path, "wb+") as f:
                                         try:
@@ -1645,7 +1679,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                     os.rmdir(testdir)
                 except:
                     pass
-
+                    
 def cmd_backup(src_dir, dest_dir,skipextras,os_list,lang_list,ids,skipids,skipgalaxy,skipstandalone,skipshared):
     gamesdb = load_manifest()
 

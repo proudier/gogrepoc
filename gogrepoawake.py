@@ -2,7 +2,7 @@ import gogrepo
 import time
 import sys
 import os
- import ctypes
+import ctypes
  
 ES_CONTINUOUS        = 0x80000000
 ES_AWAYMODE_REQUIRED = 0x00000040
