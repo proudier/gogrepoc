@@ -178,8 +178,7 @@ ORPHAN_FILE_EXCLUDE_LIST = [INFO_FILENAME, SERIAL_FILENAME]
 RESUME_SAVE_THRESHOLD = 50
 
 #temporary request wrapper while testing sessions module in context of update. Will replace request when complete
-def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUNT,delay=None):
-    showRetryAfter = False;
+def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUNT,delay=None,stream=False):
     """Performs web request to url with optional retries, delay, and byte range.
     """
     _retry = False
@@ -188,9 +187,9 @@ def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUN
 
     try:
         if byte_range is not None:  
-            response = session.get(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range})
+            response = session.get(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range},timeout=120,stream=stream)
         else:
-            response = session.get(url, params=args)
+            response = session.get(url, params=args,stream=stream,timeout=120)
         response.raise_for_status()    
     except (requests.HTTPError, requests.URLRequired, requests.Timeout,requests.ConnectionError) as e:
         if isinstance(e, requests.HTTPError):
@@ -367,7 +366,26 @@ def open_notrunc(name, bufsize=4*1024):
         flags |= os.O_BINARY  # windows
     fd = os.open(name, flags, 0o666)
     return os.fdopen(fd, 'wb', bufsize)
-
+    
+def open_notruncwrrd(name, bufsize=4*1024):
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY  # windows
+    fd = os.open(name, flags, 0o666)
+    return os.fdopen(fd, 'r+b', bufsize)
+    
+    
+def hashstream(stream,start,end):
+    stream.seek(start)
+    readlength = (end - start)+1
+    hasher = hashlib.md5()
+    try:
+        buf = stream.read(readlength)
+        hasher.update(buf)
+    except:
+        log_exception('')
+        raise
+    return hasher.hexdigest()
 
 def hashfile(afile, blocksize=65536):
     afile = open(afile, 'rb')
@@ -520,7 +538,25 @@ def handle_game_updates(olditem, newitem,strict):
                 if oldExtra.name == newExtra.name and oldExtra.size == newExtra.size:
                     if not strict:
                         newExtra.prev_verified = oldExtra.prev_verified
-                            
+
+def fetch_chunk_tree(response, session):
+    file_ext = os.path.splitext(urlparse(response.url).path)[1].lower()
+    if file_ext not in SKIP_MD5_FILE_EXT:
+        try:
+            chunk_url = response.url.replace('?', '.xml?')
+            chunk_response = update_request(session,chunk_url)
+            shelf_etree = xml.etree.ElementTree.fromstring(chunk_response.content)
+            return  shelf_etree
+        except requests.HTTPError as e:
+            if e.response.status_code == 404:
+                warn("no md5 data found for {}".format(chunk_url))
+                return None
+            else:
+                raise
+        except xml.etree.ElementTree.ParseError:
+            warn('xml parsing error occurred trying to get md5 data for {}'.format(chunk_url))
+            return None
+    return None
 
 def fetch_file_info(d, fetch_md5,updateSession):
     # fetch file name/size
@@ -534,9 +570,10 @@ def fetch_file_info(d, fetch_md5,updateSession):
 
     # fetch file md5
     if fetch_md5:
-        if os.path.splitext(response.url)[1].lower() not in SKIP_MD5_FILE_EXT:
-            tmp_md5_url = response.url.replace('?', '.xml?')
+        file_ext = os.path.splitext(urlparse(response.url).path)[1].lower()
+        if file_ext not in SKIP_MD5_FILE_EXT:
             try:
+                tmp_md5_url = response.url.replace('?', '.xml?')
                 md5_response = update_request(updateSession,tmp_md5_url)
                 shelf_etree = xml.etree.ElementTree.fromstring(md5_response.content)
                 d.md5 = shelf_etree.attrib['md5']
@@ -936,10 +973,15 @@ def cmd_login(user, passwd):
     else:
         error('login failed, verify your username/password and try again.')
 
+def makeGOGSession():
+    gogSession = requests.Session()
+    gogSession.headers={'User-Agent':USER_AGENT}
+    load_cookies()
+    gogSession.cookies.update(global_cookies)
+    return gogSession
 
 def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidden,installers,resumemode,strict):
-    updateSession = requests.Session()
-    updateSession.headers={'User-Agent':USER_AGENT}
+    
     media_type = GOG_MEDIA_TYPE_GAME
     items = []
     known_ids = []
@@ -949,10 +991,9 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
     api_url  = GOG_ACCOUNT_URL
     api_url += "/getFilteredProducts"
  
-    load_cookies()
-    updateSession.cookies.update(global_cookies)
 
     gamesdb = load_manifest()
+    updateSession = makeGOGSession()
     
     try:    
         resumedb = load_resume_manifest()
@@ -1478,7 +1519,8 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
     if dryrun:
         info("{} left to download".format(gigs(sum(sizes.values()))))
         return  # bail, as below just kicks off the actual downloading
-        
+    
+    downloadSession = makeGOGSession()    
     downloading_root_dir = os.path.join(savedir, DOWNLOADING_DIR_NAME)
     if not os.path.isdir(downloading_root_dir):
         os.makedirs(downloading_root_dir)
@@ -1487,16 +1529,16 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
     info('-'*60)
 
     # work item I/O loop
-    def ioloop(tid, path, page, out):
+    def ioloop(tid, path, response, out):
         sz, t0 = True, time.time()
-        while sz:
-            buf = page.read(4*1024)
-            t = time.time()
-            out.write(buf)
-            sz, dt, t0 = len(buf), t - t0, t
-            with lock:
-                sizes[path] -= sz
-                rates.setdefault(path, []).append((tid, (sz, dt)))
+        for chunk in response.iter_content(chunk_size=4*1024):
+            if (chunk):
+                t = time.time()
+                out.write(chunk)
+                sz, dt, t0 = len(chunk), t - t0, t
+                with lock:
+                    sizes[path] -= sz
+                    rates.setdefault(path, []).append((tid, (sz, dt)))
 
     # downloader worker thread main loop
     def worker():
@@ -1538,9 +1580,9 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                         info('failed - closing outstanding handle')
                                         ctypes.windll.kernel32.CloseHandle(preH) 
                             else:
-                                if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version.info[1] >= 3):
+                                if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version_info[1] >= 3):
                                     info("increasing preallocation to '%d' bytes for '%s' using posix_fallocate " % (sz,downloading_path))
-                                    with open(downloading_path, "ab+") as f:
+                                    with open(downloading_path, "r+b") as f:
                                         try:
                                             os.posix_fallocate(f.fileno(),0,sz)
                                         except:    
@@ -1571,9 +1613,9 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                             info('failed - closing outstanding handle')
                                             ctypes.windll.kernel32.CloseHandle(preH) 
                                 else:
-                                    if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version.info[1] >= 3):
+                                    if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version_info[1] >= 3):
                                         info("increasing preallocation to '%d' bytes for '%s' using posix_fallocate " % (sz,downloading_path))
-                                        with open(downloading_path, "ab+") as f:
+                                        with open(downloading_path, "r+b") as f:
                                             try:
                                                 os.posix_fallocate(f.fileno(),0,sz)
                                             except:    
@@ -1600,20 +1642,72 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                         info('failed - closing outstanding handle')
                                         ctypes.windll.kernel32.CloseHandle(preH) 
                             else:
-                                if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version.info[1] >= 3):
+                                if sys.version_info[0] >= 4 or (sys.version_info[0] == 3 and sys.version_info[1] >= 3):
                                     info("attempting preallocating '%d' bytes for '%s' using posix_fallocate " % (sz,downloading_path))
-                                    with open(downloading_path, "wb+") as f:
+                                    with open(downloading_path, "wb") as f:
                                         try:
                                             os.posix_fallocate(f.fileno(),0,sz)
                                         except:    
                                             warn("posix preallocation failed")
-                succeed = False                        
-                with open_notrunc(downloading_path) as out:
-                    out.seek(start)
-                    se = start, end
-                    try:
-                        with request(href, byte_range=se) as page:
-                            hdr = page.headers['Content-Range'].split()[-1]
+                succeed = False                       
+                response = update_request(downloadSession,href, byte_range=(0,0),stream=False)
+                chunk_tree = fetch_chunk_tree(response,downloadSession)
+                if (chunk_tree is not None):
+                    name = chunk_tree.attrib['name']
+                    expected_size = int(chunk_tree.attrib['total_size'])
+                    if (expected_size != sz):
+                        with lock:
+                            error("XML verification data size does not match manifest size for %s. manifest %d, received %d, skipping. "
+                                  % (name, sz, expected_size))
+                    else:
+                        expected_no_of_chunks = int(chunk_tree.attrib['chunks'])
+                        actual_no_of_chunks = len(list(chunk_tree))
+                        if (expected_no_of_chunks != actual_no_of_chunks):
+                            with lock:
+                                error("XML verification chunk data for %s is not sane skipping." % name)
+                        else: 
+                            succeed = True
+                            for elem in list(chunk_tree):
+                                method = elem.attrib["method"]
+                                if (method != "md5"):
+                                    error("XML chunk verification method for %s is not md5. skipping. " %name)
+                                    succeed = succeed and False
+                                else:
+                                    start = int(elem.attrib["from"])
+                                    end =   int(elem.attrib["to"])
+                                    se = start,end
+                                    md5 = elem.text
+                                    with open_notruncwrrd(downloading_path) as out:
+                                        valid = hashstream(out,start,end) == md5
+                                        if (valid):
+                                            with lock:
+                                                sizes[path] -= (end - start)+1
+                                        else:
+                                            try:
+                                                response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
+                                                hdr = response.headers['Content-Range'].split()[-1]
+                                                if hdr != '%d-%d/%d' % (start, end, sz):
+                                                    with lock:
+                                                        error("chunk request has unexpected Content-Range. "
+                                                              "expected '%d-%d/%d' received '%s'. skipping."
+                                                              % (start, end, sz, hdr))
+                                                        succeed = succeed and False
+                                                else:
+                                                    out.seek(start)
+                                                    assert out.tell() == start
+                                                    ioloop(tid, path, response, out)
+                                                    assert out.tell() == end + 1
+                                                    succeed = succeed and True
+                                            except requests.HTTPError as e:
+                                                error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                                succeed = succeed and False
+                else:
+                    with open_notrunc(downloading_path) as out:
+                        out.seek(start)
+                        se = start, end
+                        try:
+                            response = update_request(downloadSession,href, byte_range=se,stream=True)
+                            hdr = response.headers['Content-Range'].split()[-1]
                             if hdr != '%d-%d/%d' % (start, end, sz):
                                 with lock:
                                     error("chunk request has unexpected Content-Range. "
@@ -1621,11 +1715,11 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                           % (start, end, sz, hdr))
                             else:
                                 assert out.tell() == start
-                                ioloop(tid, path, page, out)
+                                ioloop(tid, path, response, out)
                                 assert out.tell() == end + 1
                                 succeed = True;
-                    except HTTPError as e:
-                        error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                        except requests.HTTPError as e:
+                            error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
                 if succeed and sizes[path]==0:
                     with lock:
                         info("moving completed download '%s' to '%s'  " % (downloading_path,path))
