@@ -127,6 +127,8 @@ GOG_MEDIA_TYPE_MOVIE = '2'
 HTTP_FETCH_DELAY = 1   # in seconds
 HTTP_RETRY_DELAY = 5   # in seconds
 HTTP_RETRY_COUNT = 3
+HTTP_TIMEOUT = 30
+
 HTTP_GAME_DOWNLOADER_THREADS = 4
 HTTP_PERM_ERRORCODES = (404, 403, 503)
 USER_AGENT = 'GOGRepoK/' + str(__version__)
@@ -187,9 +189,9 @@ def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUN
 
     try:
         if byte_range is not None:  
-            response = session.get(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range},timeout=120,stream=stream)
+            response = session.get(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range},timeout=HTTP_TIMEOUT,stream=stream)
         else:
-            response = session.get(url, params=args,stream=stream,timeout=120)
+            response = session.get(url, params=args,stream=stream,timeout=HTTP_TIMEOUT)
         response.raise_for_status()    
     except (requests.HTTPError, requests.URLRequired, requests.Timeout,requests.ConnectionError) as e:
         if isinstance(e, requests.HTTPError):
@@ -1527,18 +1529,30 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
         
 
     info('-'*60)
+    
+    def killresponse(response):
+        response.close()
 
     # work item I/O loop
     def ioloop(tid, path, response, out):
         sz, t0 = True, time.time()
+        dlsz = 0
+        responseTimer = threading.Timer(HTTP_TIMEOUT,killresponse,[response])
+        responseTimer.start()
         for chunk in response.iter_content(chunk_size=4*1024):
+            responseTimer.cancel()
+            responseTimer = threading.Timer(HTTP_TIMEOUT,killresponse,[response])
+            responseTimer.start()
             if (chunk):
                 t = time.time()
                 out.write(chunk)
                 sz, dt, t0 = len(chunk), t - t0, t
+                dlsz = dlsz + sz
                 with lock:
                     sizes[path] -= sz
                     rates.setdefault(path, []).append((tid, (sz, dt)))
+        responseTimer.cancel()
+        return dlsz            
 
     # downloader worker thread main loop
     def worker():
@@ -1683,43 +1697,75 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                             with lock:
                                                 sizes[path] -= (end - start)+1
                                         else:
-                                            try:
-                                                response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
-                                                hdr = response.headers['Content-Range'].split()[-1]
-                                                if hdr != '%d-%d/%d' % (start, end, sz):
-                                                    with lock:
-                                                        error("chunk request has unexpected Content-Range. "
-                                                              "expected '%d-%d/%d' received '%s'. skipping."
-                                                              % (start, end, sz, hdr))
-                                                        succeed = succeed and False
-                                                else:
-                                                    out.seek(start)
-                                                    assert out.tell() == start
-                                                    ioloop(tid, path, response, out)
-                                                    assert out.tell() == end + 1
-                                                    succeed = succeed and True
-                                            except requests.HTTPError as e:
-                                                error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
-                                                succeed = succeed and False
+                                            retries = HTTP_RETRY_COUNT
+                                            downloadSegmentSuccess = False
+                                            while (not downloadSegmentSuccess and retries >= 0):
+                                                try:
+                                                    response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
+                                                    hdr = response.headers['Content-Range'].split()[-1]
+                                                    if hdr != '%d-%d/%d' % (start, end, sz):
+                                                        with lock:
+                                                            error("chunk request has unexpected Content-Range. "
+                                                                  "expected '%d-%d/%d' received '%s'. skipping."
+                                                                  % (start, end, sz, hdr))
+                                                            succeed = succeed and False
+                                                            retries = -1
+                                                    else:
+                                                        out.seek(start)
+                                                        assert out.tell() == start
+                                                        dlsz = ioloop(tid, path, response, out)
+                                                        if (dlsz == (end - start)+1 and out.tell() == end + 1):
+                                                            downloadSegmentSuccess= True;
+                                                            succeed = succeed and True
+                                                        else:
+                                                            with lock:
+                                                                sizes[path] += dlsz
+                                                            if (retries > 0):
+                                                                warn("failed to download %s, byte_range=%s (%d retries left) -- will retry in %ds..." % (os.path.basename(path), str(se),retries,HTTP_RETRY_DELAY))
+                                                            else:
+                                                                error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                                                succeed = succeed and False;
+                                                        retries = retries -1 
+                                                except requests.HTTPError as e:
+                                                    error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                                    succeed = succeed and False
+                                                    retries = -1
                 else:
                     with open_notrunc(downloading_path) as out:
-                        out.seek(start)
                         se = start, end
-                        try:
-                            response = update_request(downloadSession,href, byte_range=se,stream=True)
-                            hdr = response.headers['Content-Range'].split()[-1]
-                            if hdr != '%d-%d/%d' % (start, end, sz):
-                                with lock:
-                                    error("chunk request has unexpected Content-Range. "
-                                          "expected '%d-%d/%d' received '%s'. skipping."
-                                          % (start, end, sz, hdr))
-                            else:
-                                assert out.tell() == start
-                                ioloop(tid, path, response, out)
-                                assert out.tell() == end + 1
-                                succeed = True;
-                        except requests.HTTPError as e:
-                            error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                        retries = HTTP_RETRY_COUNT
+                        downloadSuccess = False
+                        while (not downloadSuccess and retries >= 0):
+                            try:
+                                response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
+                                hdr = response.headers['Content-Range'].split()[-1]
+                                if hdr != '%d-%d/%d' % (start, end, sz):
+                                    with lock:
+                                        error("chunk request has unexpected Content-Range. "
+                                              "expected '%d-%d/%d' received '%s'. skipping."
+                                              % (start, end, sz, hdr))
+                                        succeed = False
+                                        retries = -1
+                                else:
+                                    out.seek(start)
+                                    assert out.tell() == start
+                                    dlsz = ioloop(tid, path, response, out)
+                                    if (dlsz == (end - start)+1 and out.tell() == end + 1):
+                                        downloadSuccess= True;
+                                        succeed = True
+                                    else:
+                                        with lock:
+                                            sizes[path] += dlsz
+                                        if (retries > 0):
+                                            warn("failed to download %s, byte_range=%s (%d retries left) -- will retry in %ds..." % (os.path.basename(path), str(se),retries,HTTP_RETRY_DELAY))
+                                        else:
+                                            error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                            succeed = False;
+                                    retries = retries -1 
+                            except requests.HTTPError as e:
+                                error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                succeed = False
+                                retries = -1
                 if succeed and sizes[path]==0:
                     with lock:
                         info("moving completed download '%s' to '%s'  " % (downloading_path,path))
