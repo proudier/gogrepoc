@@ -80,8 +80,11 @@ FILE_BEGIN = 0x0
 
 
 # lib mods
-cookiejar.MozillaCookieJar.magic_re = r'.*'  # bypass the hardcoded "Netscape HTTP Cookie File" check
-
+# bypass the hardcoded "Netscape HTTP Cookie File" check
+if hasattr(cookiejar.MozillaCookieJar.magic_re, "search"):
+    cookiejar.MozillaCookieJar.magic_re = re.compile(r'.*') 
+else:
+    cookiejar.MozillaCookieJar.magic_re = r'.*'  
 # configure logging
 logFormatter = logging.Formatter("%(asctime)s | %(message)s", datefmt='%H:%M:%S')
 rootLogger = logging.getLogger('ws')
@@ -102,6 +105,8 @@ log_exception = rootLogger.exception
 # filepath constants
 GAME_STORAGE_DIR = r'.'
 COOKIES_FILENAME = r'gog-cookies.dat'
+NETSCAPE_COOKIES_FILENAME = r'cookies.txt'
+NETSCAPE_COOKIES_TMP_FILENAME = r'cookies.txt.tmp'
 MANIFEST_FILENAME = r'gog-manifest.dat'
 RESUME_MANIFEST_FILENAME = r'gog-resume-manifest.dat'
 SERIAL_FILENAME = r'!serial.txt'
@@ -298,7 +303,15 @@ def load_cookies():
 
     # try to import as mozilla 'cookies.txt' format
     try:
-        tmp_jar = cookiejar.MozillaCookieJar(global_cookies.filename)
+        with codecs.open(NETSCAPE_COOKIES_FILENAME,"rU",'utf-8') as f1:
+            with codecs.open(NETSCAPE_COOKIES_TMP_FILENAME,"w",'utf-8') as f2:
+                for line in f1:
+                    line = line.replace(u"#HttpOnly_",u"")
+                    line=line.strip()
+                    if not (line.startswith(u"#")):
+                        if (u"gog.com" in line): 
+                            f2.write(line+u"\n")
+        tmp_jar = cookiejar.MozillaCookieJar(NETSCAPE_COOKIES_TMP_FILENAME)
         tmp_jar.load()
         for c in tmp_jar:
             global_cookies.set_cookie(c)
