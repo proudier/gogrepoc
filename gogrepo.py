@@ -1,3 +1,4 @@
+#!python3
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -38,6 +39,7 @@ import ctypes
 # python 2 / 3 imports
 import requests 
 import re
+import OpenSSL
 try:
     # python 2
     from Queue import Queue
@@ -198,7 +200,7 @@ def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUN
         else:
             response = session.get(url, params=args,stream=stream,timeout=HTTP_TIMEOUT)
         response.raise_for_status()    
-    except (requests.HTTPError, requests.URLRequired, requests.Timeout,requests.ConnectionError) as e:
+    except (requests.HTTPError, requests.URLRequired, requests.Timeout,requests.ConnectionError,OpenSSL.SSL.Error) as e:
         if isinstance(e, requests.HTTPError):
             if e.response.status_code in HTTP_PERM_ERRORCODES:  # do not retry these HTTP codes
                 warn('request failed: %s.  will not retry.', e)
@@ -1548,23 +1550,28 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
 
     # work item I/O loop
     def ioloop(tid, path, response, out):
+        #info("Entering I/O Loop - " + path)
         sz, t0 = True, time.time()
         dlsz = 0
         responseTimer = threading.Timer(HTTP_TIMEOUT,killresponse,[response])
         responseTimer.start()
-        for chunk in response.iter_content(chunk_size=4*1024):
-            responseTimer.cancel()
-            responseTimer = threading.Timer(HTTP_TIMEOUT,killresponse,[response])
-            responseTimer.start()
-            if (chunk):
-                t = time.time()
-                out.write(chunk)
-                sz, dt, t0 = len(chunk), t - t0, t
-                dlsz = dlsz + sz
-                with lock:
-                    sizes[path] -= sz
-                    rates.setdefault(path, []).append((tid, (sz, dt)))
+        try:
+            for chunk in response.iter_content(chunk_size=4*1024):
+                responseTimer.cancel()
+                if (chunk):
+                    t = time.time()
+                    out.write(chunk)
+                    sz, dt, t0 = len(chunk), t - t0, t
+                    dlsz = dlsz + sz
+                    with lock:
+                        sizes[path] -= sz
+                        rates.setdefault(path, []).append((tid, (sz, dt)))
+                responseTimer = threading.Timer(HTTP_TIMEOUT,killresponse,[response])
+                responseTimer.start()
+        except (requests.exceptions.ConnectionError,requests.packages.urllib3.exceptions.ProtocolError) as e:
+            error("server response issue while downloading content for %s" % (path)) 
         responseTimer.cancel()
+        #info("Exiting I/O Loop - " + path)
         return dlsz            
 
     # downloader worker thread main loop
@@ -1740,15 +1747,20 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                                                 succeed = succeed and False;
                                                         retries = retries -1 
                                                 except requests.HTTPError as e:
-                                                    error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
-                                                    succeed = succeed and False
-                                                    retries = -1
+                                                    with lock:
+                                                        error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                                        succeed = succeed and False
+                                                        retries = -1
+                                                except Exception as e:
+                                                     with lock:
+                                                        log_exception('')                                
+                                                        raise
                 else:
                     with open_notrunc(downloading_path) as out:
                         se = start, end
                         retries = HTTP_RETRY_COUNT
                         downloadSuccess = False
-                        while (not downloadSuccess and retries >= 0):
+                        while ((not downloadSuccess) and retries >= 0):
                             try:
                                 response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
                                 hdr = response.headers['Content-Range'].split()[-1]
@@ -1769,24 +1781,40 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     else:
                                         with lock:
                                             sizes[path] += dlsz
-                                        if (retries > 0):
-                                            warn("failed to download %s, byte_range=%s (%d retries left) -- will retry in %ds..." % (os.path.basename(path), str(se),retries,HTTP_RETRY_DELAY))
-                                        else:
-                                            error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
-                                            succeed = False;
-                                    retries = retries -1 
+                                            if (retries > 0):
+                                                warn("failed to download %s, byte_range=%s (%d retries left) -- will retry in %ds..." % (os.path.basename(path), str(se),retries,HTTP_RETRY_DELAY))
+                                                time.sleep(HTTP_RETRY_DELAY)
+                                            else:
+                                                error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
+                                                succeed = False;
+                                            retries = retries -1 
                             except requests.HTTPError as e:
                                 error("failed to download %s, byte_range=%s" % (os.path.basename(path), str(se)))
                                 succeed = False
                                 retries = -1
+                            except Exception as e:
+                                 with lock:
+                                    log_exception('')                                
+                                    raise
                 if succeed and sizes[path]==0:
                     with lock:
                         info("moving completed download '%s' to '%s'  " % (downloading_path,path))
                         shutil.move(downloading_path,path)
+                else:
+                    with lock:
+                        info("not moving uncompleted download '%s', success: %s remaining bytes: %d / %d " % (downloading_path,path,str(succeed),sizes[path],sz))
+                        shutil.move(downloading_path,path)                    
             except IOError as e:
                 with lock:
+                    log_exception('')                                
                     print('!', path, file=sys.stderr)
                     errors.setdefault(path, []).append(e)
+            except Exception as e:
+                 with lock:
+                    log_exception('')                                
+                    raise
+            #debug 
+            #info("thread completed")
             work.task_done()
 
     # detailed progress report
