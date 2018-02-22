@@ -534,7 +534,7 @@ def handle_game_updates(olditem, newitem,strict):
     for oldDownload in olditem.downloads+olditem.galaxyDownloads+olditem.sharedDownloads:
         for newDownload in newitem.downloads+newitem.galaxyDownloads+newitem.sharedDownloads:
             if oldDownload.md5 is not None:
-                if oldDownload.md5 == newDownload.md5 and oldDownload.size == newDownload.size  :
+                if oldDownload.md5 == newDownload.md5 and oldDownload.size == newDownload.size and oldDownload.lang == newDownload.lang:
                         newDownload.prev_verified = oldDownload.prev_verified         
                         if oldDownload.name != newDownload.name:
                             info('  -> in title "{}" a download has changed name "{}" -> "{}"'.format(newitem.title,oldDownload.name,newDownload.name))
@@ -1802,7 +1802,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                         shutil.move(downloading_path,path)
                 else:
                     with lock:
-                        info("not moving uncompleted download '%s', success: %s remaining bytes: %d / %d " % (downloading_path,path,str(succeed),sizes[path],sz))
+                        info("not moving uncompleted download '%s', success: %s remaining bytes: %d / %d " % (downloading_path,str(succeed),sizes[path],sz))
                         shutil.move(downloading_path,path)                    
             except IOError as e:
                 with lock:
