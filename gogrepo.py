@@ -40,6 +40,7 @@ import ctypes
 import requests 
 import re
 import OpenSSL
+import glob
 try:
     # python 2
     from Queue import Queue
@@ -92,7 +93,7 @@ logFormatter = logging.Formatter("%(asctime)s | %(message)s", datefmt='%H:%M:%S'
 rootLogger = logging.getLogger('ws')
 rootLogger.setLevel(logging.DEBUG)
 consoleHandler = logging.StreamHandler(sys.stdout)
-loggingHandler = logging.handlers.RotatingFileHandler('gogrepo.log', mode='a+', maxBytes = 10485760 , backupCount = 10,  encoding=None, delay=True)
+loggingHandler = logging.handlers.RotatingFileHandler('gogrepo.log', mode='a+', maxBytes = 10485760*3 , backupCount = 10,  encoding=None, delay=True)
 loggingHandler.setFormatter(logFormatter)
 consoleHandler.setFormatter(logFormatter)
 rootLogger.addHandler(consoleHandler)
@@ -1803,7 +1804,6 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                 else:
                     with lock:
                         info("not moving uncompleted download '%s', success: %s remaining bytes: %d / %d " % (downloading_path,str(succeed),sizes[path],sz))
-                        shutil.move(downloading_path,path)                    
             except IOError as e:
                 with lock:
                     log_exception('')                                
@@ -2155,7 +2155,22 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
     if clean_on_fail:
         info('cleaned items....... %d' % clean_file_cnt)
         
-
+def cmd_trash(cleandir,installersonly):
+    downloading_root_dir = os.path.join(cleandir, DOWNLOADING_DIR_NAME)
+    for dir in os.listdir(downloading_root_dir):
+        testdir= os.path.join(downloading_root_dir,dir)
+        if os.path.isdir(testdir):
+            if not installersonly:
+                try:
+                    os.rmdir(testdir)
+                except:
+                    pass
+            else: 
+                #List dir. 
+                #Delete all installers (exe/bin/dmg/sh)
+                #Remove dir if now empty
+                pass
+        
 
 def cmd_clean(cleandir, dryrun):
     items = load_manifest()
