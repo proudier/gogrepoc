@@ -16,8 +16,8 @@ import os
 import sys
 import threading
 import logging
-import contextlib
-import json
+#import contextlib
+#import json
 import html5lib
 import pprint
 import time
@@ -29,35 +29,29 @@ import codecs
 import io
 import datetime
 import shutil
-import socket
+#import socket
 import xml.etree.ElementTree
 import copy
 import logging.handlers
-import platform
-#import subprocess
 import ctypes
-# python 2 / 3 imports
 import requests 
 import re
 import OpenSSL
-import glob
+import platform
+import locale
+# python 2 / 3 imports
 try:
     # python 2
     from Queue import Queue
     import cookielib as cookiejar
-    from httplib import BadStatusLine
     from urlparse import urlparse,unquote
-    from urllib import urlencode
-    from urllib2 import HTTPError, URLError, HTTPCookieProcessor, build_opener, Request
     from itertools import izip_longest as zip_longest
     from StringIO import StringIO
 except ImportError:
     # python 3
     from queue import Queue
     import http.cookiejar as cookiejar
-    from http.client import BadStatusLine
-    from urllib.parse import urlparse, urlencode, unquote
-    from urllib.request import HTTPCookieProcessor, HTTPError, URLError, build_opener, Request
+    from urllib.parse import urlparse, unquote
     from itertools import zip_longest
     from io import StringIO
 
@@ -117,10 +111,6 @@ INFO_FILENAME = r'!info.txt'
 
 # global web utilities
 global_cookies = cookiejar.LWPCookieJar(COOKIES_FILENAME)
-cookieproc = HTTPCookieProcessor(global_cookies)
-opener = build_opener(cookieproc)
-treebuilder = html5lib.treebuilders.getTreeBuilder('etree')
-parser = html5lib.HTMLParser(tree=treebuilder, namespaceHTMLElements=False)
 
 # GOG URLs
 GOG_HOME_URL = r'https://www.gog.com'
@@ -140,13 +130,6 @@ HTTP_TIMEOUT = 30
 HTTP_GAME_DOWNLOADER_THREADS = 4
 HTTP_PERM_ERRORCODES = (404, 403, 503)
 USER_AGENT = 'GOGRepoK/' + str(__version__)
-
-# Save manifest data for these os and lang combinations
-DEFAULT_OS_LIST = ['windows']
-DEFAULT_LANG_LIST = ['en']
-
-# These file types don't have md5 data from GOG
-SKIP_MD5_FILE_EXT = ['.txt', '.zip']
 
 # Language table that maps two letter language to their unicode gogapi json name
 LANG_TABLE = {'en': u'English',   # English
@@ -180,6 +163,30 @@ LANG_TABLE = {'en': u'English',   # English
 VALID_OS_TYPES = ['windows', 'linux', 'mac']
 VALID_LANG_TYPES = list(LANG_TABLE.keys())
 
+DEFAULT_FALLBACK_LANG = 'en'
+
+# Save manifest data for these os and lang combinations
+sysOS = platform.system() 
+sysOS = sysOS.lower()    
+if sysOS == 'darwin':
+    sysOS = 'mac'
+if not (sysOS in VALID_OS_TYPES):
+    sysOS = 'linux'
+DEFAULT_OS_LIST = [sysOS]
+sysLang,_ = locale.getdefaultlocale()
+sysLang = sysLang[:2]
+if not (sysLang in VALID_LANG_TYPES):
+    sysLang = 'en'
+DEFAULT_LANG_LIST = [sysLang]
+
+#if DEFAULT_FALLBACK_LANG not in DEFAULT_LANG_LIST:
+#    DEFAULT_LANG_LIST.push(DEFAULT_FALLBACK_LANG)
+
+# These file types don't have md5 data from GOG
+SKIP_MD5_FILE_EXT = ['.txt', '.zip']
+INSTALLERS_EXT = ['.exe','.bin','.dmg','.sh']
+
+
 ORPHAN_DIR_NAME = '!orphaned'
 DOWNLOADING_DIR_NAME = '!downloading'
 
@@ -188,7 +195,7 @@ ORPHAN_FILE_EXCLUDE_LIST = [INFO_FILENAME, SERIAL_FILENAME]
 RESUME_SAVE_THRESHOLD = 50
 
 #temporary request wrapper while testing sessions module in context of update. Will replace request when complete
-def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUNT,delay=None,stream=False):
+def request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUNT,delay=None,stream=False,data=None):
     """Performs web request to url with optional retries, delay, and byte range.
     """
     _retry = False
@@ -196,10 +203,16 @@ def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUN
         time.sleep(delay)
 
     try:
-        if byte_range is not None:  
-            response = session.get(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range},timeout=HTTP_TIMEOUT,stream=stream)
+        if data is not None:        
+            if byte_range is not None:  
+                response = session.post(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range},timeout=HTTP_TIMEOUT,stream=stream,data=data)
+            else:
+                response = session.post(url, params=args,stream=stream,timeout=HTTP_TIMEOUT,data=data)
         else:
-            response = session.get(url, params=args,stream=stream,timeout=HTTP_TIMEOUT)
+            if byte_range is not None:  
+                response = session.get(url, params=args, headers= {'Range':'bytes=%d-%d' % byte_range},timeout=HTTP_TIMEOUT,stream=stream)
+            else:
+                response = session.get(url, params=args,stream=stream,timeout=HTTP_TIMEOUT)        
         response.raise_for_status()    
     except (requests.HTTPError, requests.URLRequired, requests.Timeout,requests.ConnectionError,OpenSSL.SSL.Error) as e:
         if isinstance(e, requests.HTTPError):
@@ -213,42 +226,9 @@ def update_request(session,url,args=None,byte_range=None,retries=HTTP_RETRY_COUN
 
         if _retry:
             warn('request failed: %s (%d retries left) -- will retry in %ds...' % (e, retries, HTTP_RETRY_DELAY))
-            return update_request(session=session,url=url, args=args, byte_range=byte_range, retries=retries-1, delay=HTTP_RETRY_DELAY)
+            return request(session=session,url=url, args=args, byte_range=byte_range, retries=retries-1, delay=HTTP_RETRY_DELAY)
     return response
     
-
-def request(url, args=None, byte_range=None, retries=HTTP_RETRY_COUNT, delay=HTTP_FETCH_DELAY):
-    """Performs web request to url with optional retries, delay, and byte range.
-    """
-    _retry = False
-    time.sleep(delay)
-
-    try:
-        if args is not None:
-            enc_args = urlencode(args)
-            enc_args = enc_args.encode('ascii') # needed for Python 3
-        else:
-            enc_args = None
-        req = Request(url, data=enc_args)
-        if byte_range is not None:
-            req.add_header('Range', 'bytes=%d-%d' % byte_range)
-        page = opener.open(req)
-    except (HTTPError, URLError, socket.error, BadStatusLine) as e:
-        if isinstance(e, HTTPError):
-            if e.code in HTTP_PERM_ERRORCODES:  # do not retry these HTTP codes
-                warn('request failed: %s.  will not retry.', e)
-                raise
-        if retries > 0:
-            _retry = True
-        else:
-            raise 
-
-        if _retry:
-            warn('request failed: %s (%d retries left) -- will retry in %ds...' % (e, retries, HTTP_RETRY_DELAY))
-            return request(url=url, args=args, byte_range=byte_range, retries=retries-1, delay=HTTP_RETRY_DELAY)
-
-    return contextlib.closing(page)
-
 
 # --------------------------
 # Helper types and functions
@@ -562,7 +542,7 @@ def fetch_chunk_tree(response, session):
     if file_ext not in SKIP_MD5_FILE_EXT:
         try:
             chunk_url = response.url.replace('?', '.xml?')
-            chunk_response = update_request(session,chunk_url)
+            chunk_response = request(session,chunk_url)
             shelf_etree = xml.etree.ElementTree.fromstring(chunk_response.content)
             return  shelf_etree
         except requests.HTTPError as e:
@@ -579,7 +559,7 @@ def fetch_chunk_tree(response, session):
 def fetch_file_info(d, fetch_md5,updateSession):
     # fetch file name/size
     #try:
-    response = update_request(updateSession,d.href,byte_range=(0, 0))
+    response = request(updateSession,d.href,byte_range=(0, 0))
     #except ContentDecodingError as e:
         #info('decoding failed because getting 0 bytes')
         #response = e.response
@@ -592,7 +572,7 @@ def fetch_file_info(d, fetch_md5,updateSession):
         if file_ext not in SKIP_MD5_FILE_EXT:
             try:
                 tmp_md5_url = response.url.replace('?', '.xml?')
-                md5_response = update_request(updateSession,tmp_md5_url)
+                md5_response = request(updateSession,tmp_md5_url)
                 shelf_etree = xml.etree.ElementTree.fromstring(md5_response.content)
                 d.md5 = shelf_etree.attrib['md5']
             except requests.HTTPError as e:
@@ -774,6 +754,7 @@ def process_argv(argv):
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive
     g4.add_argument('-skipknown', action='store_true', help='skip games already known by manifest')
     g4.add_argument('-updateonly', action='store_true', help='only games marked with the update tag')
+    g4.add_argument('-full', action='store_true', help='all games on your account')    
     g5 = g1.add_mutually_exclusive_group()  # below are mutually exclusive
     g5.add_argument('-ids', action='store', help='id(s)/titles(s) of (a) specific game(s) to update', nargs='*', default=[])
     g5.add_argument('-skipids', action='store', help='id(s)/titles(s) of (a) specific game(s) not to update', nargs='*', default=[])
@@ -799,11 +780,11 @@ def process_argv(argv):
     g1.add_argument('-wait', action='store', type=float,
                     help='wait this long in hours before starting', default=0.0)  # sleep in hr
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
-    g4.add_argument('-skipos', action='store', help='skip downloading game files for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES if x not in DEFAULT_OS_LIST])  
-    g4.add_argument('-os', action='store', help='download game files only for operating system(s)', nargs='*', default=DEFAULT_OS_LIST) 
+    g4.add_argument('-skipos', action='store', help='skip downloading game files for operating system(s)', nargs='*', default=[])  
+    g4.add_argument('-os', action='store', help='download game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES]) 
     g5 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
-    g5.add_argument('-lang', action='store', help='download game files only for language(s)', nargs='*', default=DEFAULT_LANG_LIST)    
-    g5.add_argument('-skiplang', action='store', help='skip downloading game files for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES if x not in DEFAULT_LANG_LIST])  
+    g5.add_argument('-lang', action='store', help='download game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES])    
+    g5.add_argument('-skiplang', action='store', help='skip downloading game files for language(s)', nargs='*', default=[])  
     g1.add_argument('-nolog', action='store_true', help = 'doesn\'t writes log file gogrepo.log')
 
                     
@@ -812,11 +793,11 @@ def process_argv(argv):
     g1.add_argument('src_dir', action='store', help='source directory to import games from')
     g1.add_argument('dest_dir', action='store', help='directory to copy and name imported files to')
     g2 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
-    g2.add_argument('-skipos', action='store', help='skip importing game files for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES if x not in DEFAULT_OS_LIST])  
-    g2.add_argument('-os', action='store', help='import game files only for operating system(s)', nargs='*', default=DEFAULT_OS_LIST)  
+    g2.add_argument('-skipos', action='store', help='skip importing game files for operating system(s)', nargs='*', default=[])  
+    g2.add_argument('-os', action='store', help='import game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
     g3 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
-    g3.add_argument('-skiplang', action='store', help='skip importing game files for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES if x not in DEFAULT_LANG_LIST])        
-    g3.add_argument('-lang', action='store', help='import game files only for language(s)', nargs='*', default=DEFAULT_LANG_LIST)       
+    g3.add_argument('-skiplang', action='store', help='skip importing game files for language(s)', nargs='*', default=[])        
+    g3.add_argument('-lang', action='store', help='import game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES])       
     #Code path available but commented out and hardcoded as false due to lack of MD5s on extras. 
     #g4 = g1.add_mutually_exclusive_group()
     #g4.add_argument('-skipextras', action='store_true', help='skip downloading of any GOG extra files')
@@ -837,11 +818,11 @@ def process_argv(argv):
     g5.add_argument('-ids', action='store', help='id(s) or title(s) of the game in the manifest to backup', nargs='*', default=[])
     g5.add_argument('-skipids', action='store', help='id(s) or title(s) of the game(s) in the manifest to NOT backup', nargs='*', default=[])    
     g2 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
-    g2.add_argument('-skipos', action='store', help='skip backup of game files for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES if x not in DEFAULT_OS_LIST])  
-    g2.add_argument('-os', action='store', help='backup game files only for operating system(s)', nargs='*', default=DEFAULT_OS_LIST)  
+    g2.add_argument('-skipos', action='store', help='skip backup of game files for operating system(s)', nargs='*', default=[])  
+    g2.add_argument('-os', action='store', help='backup game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
     g3 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
-    g3.add_argument('-skiplang', action='store', help='skip backup of game files for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES if x not in DEFAULT_LANG_LIST])        
-    g3.add_argument('-lang', action='store', help='backup game files only for language(s)', nargs='*', default=DEFAULT_LANG_LIST)        
+    g3.add_argument('-skiplang', action='store', help='skip backup of game files for language(s)', nargs='*', default=[])        
+    g3.add_argument('-lang', action='store', help='backup game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES] )        
     g4 = g1.add_mutually_exclusive_group()
     g4.add_argument('-skipextras', action='store_true', help='skip backup of any GOG extra files')
     g4.add_argument('-skipgames', action='store_true', help='skip backup of any GOG game files')
@@ -864,11 +845,11 @@ def process_argv(argv):
     g3.add_argument('-skipids', action='store', help='id(s) or title(s) of the game[s] in the manifest to NOT verify', nargs='*', default=[])
     g3.add_argument('-id', action='store', help='(deprecated) id or title of the game in the manifest to verify')    
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
-    g4.add_argument('-skipos', action='store', help='skip verification of game files for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES if x not in DEFAULT_OS_LIST])  
-    g4.add_argument('-os', action='store', help='verify game files only for operating system(s)', nargs='*', default=DEFAULT_OS_LIST)  
+    g4.add_argument('-skipos', action='store', help='skip verification of game files for operating system(s)', nargs='*', default=[])  
+    g4.add_argument('-os', action='store', help='verify game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
     g5 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
-    g5.add_argument('-skiplang', action='store', help='skip verification of game files for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES if x not in DEFAULT_LANG_LIST])        
-    g5.add_argument('-lang', action='store', help='verify game files only for language(s)', nargs='*', default=DEFAULT_LANG_LIST)        
+    g5.add_argument('-skiplang', action='store', help='skip verification of game files for language(s)', nargs='*', default=[])        
+    g5.add_argument('-lang', action='store', help='verify game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES])        
     g6 = g1.add_mutually_exclusive_group()
     g6.add_argument('-skipextras', action='store_true', help='skip verification of any GOG extra files')
     g6.add_argument('-skipgames', action='store_true', help='skip verification of any GOG game files')
@@ -933,72 +914,79 @@ def cmd_login(user, passwd):
         login_data['passwd'] = getpass.getpass()
 
     info("attempting gog login as '{}' ...".format(login_data['user']))
+    
+    loginSession = makeGOGSession(True)
 
     # fetch the auth url
-    with request(GOG_HOME_URL, delay=0) as page:
-        etree = html5lib.parse(page, namespaceHTMLElements=False)
-        for elm in etree.findall('.//script'):
-            if elm.text is not None and 'GalaxyAccounts' in elm.text:
-                login_data['auth_url'] = elm.text.split("'")[1]
-                break
+    
+    page_response = request(loginSession,GOG_HOME_URL)    
+    etree = html5lib.parse(page_response.text, namespaceHTMLElements=False)
+    for elm in etree.findall('.//script'):
+        if elm.text is not None and 'GalaxyAccounts' in elm.text:
+            login_data['auth_url'] = elm.text.split("'")[1]
+            break
 
+    page_response = request(loginSession,login_data['auth_url'])          
     # fetch the login token
-    with request(login_data['auth_url'], delay=0) as page:
-        etree = html5lib.parse(page, namespaceHTMLElements=False)
-        # Bail if we find a request for a reCAPTCHA
-        if len(etree.findall('.//div[@class="g-recaptcha"]')) > 0:
-            error("cannot continue, gog is asking for a reCAPTCHA :(  try again in a few minutes.")
-            return
-        for elm in etree.findall('.//input'):
-            if elm.attrib['id'] == 'login__token':
-                login_data['login_token'] = elm.attrib['value']
-                break
+    etree = html5lib.parse(page_response.text, namespaceHTMLElements=False)
+    # Bail if we find a request for a reCAPTCHA
+    if len(etree.findall('.//div[@class="g-recaptcha form__recaptcha"]')) > 0:
+        error("cannot continue, gog is asking for a reCAPTCHA :(  try again in a few minutes.")
+        return
+    for elm in etree.findall('.//input'):
+        if elm.attrib['id'] == 'login__token':
+            login_data['login_token'] = elm.attrib['value']
+            break
 
     # perform login and capture two-step token if required
-    with request(GOG_LOGIN_URL, delay=0, args={'login[username]': login_data['user'],
+    page_response = request(loginSession,GOG_LOGIN_URL, data={'login[username]': login_data['user'],
                                                'login[password]': login_data['passwd'],
                                                'login[login]': '',
-                                               'login[_token]': login_data['login_token']}) as page:
-        etree = html5lib.parse(page, namespaceHTMLElements=False)
-        if 'two_step' in page.geturl():
-            login_data['two_step_url'] = page.geturl()
-            for elm in etree.findall('.//input'):
-                if elm.attrib['id'] == 'second_step_authentication__token':
-                    login_data['two_step_token'] = elm.attrib['value']
-                    break
-        elif 'on_login_success' in page.geturl():
-            login_data['login_success'] = True
+                                               'login[_token]': login_data['login_token']}) 
+    etree = html5lib.parse(page_response.text, namespaceHTMLElements=False)
+    if 'two_step' in page_response.url:
+        login_data['two_step_url'] = page_response.url
+        for elm in etree.findall('.//input'):
+            if elm.attrib['id'] == 'second_step_authentication__token':
+                login_data['two_step_token'] = elm.attrib['value']
+                break
+    elif 'on_login_success' in page_response.url:
+        login_data['login_success'] = True
 
     # perform two-step if needed
     if login_data['two_step_url'] is not None:
         login_data['two_step_security_code'] = input("enter two-step security code: ")
 
         # Send the security code back to GOG
-        with request(login_data['two_step_url'], delay=0,
-                     args={'second_step_authentication[token][letter_1]': login_data['two_step_security_code'][0],
+        page_response= request(loginSession,login_data['two_step_url'], 
+                     data={'second_step_authentication[token][letter_1]': login_data['two_step_security_code'][0],
                            'second_step_authentication[token][letter_2]': login_data['two_step_security_code'][1],
                            'second_step_authentication[token][letter_3]': login_data['two_step_security_code'][2],
                            'second_step_authentication[token][letter_4]': login_data['two_step_security_code'][3],
                            'second_step_authentication[send]': "",
-                           'second_step_authentication[_token]': login_data['two_step_token']}) as page:
-            if 'on_login_success' in page.geturl():
-                login_data['login_success'] = True
+                           'second_step_authentication[_token]': login_data['two_step_token']})
+        if 'on_login_success' in page_response.url:
+            login_data['login_success'] = True
 
     # save cookies on success
     if login_data['login_success']:
         info('login successful!')
+        for c in loginSession.cookies:
+            global_cookies.set_cookie(c)
         global_cookies.save()
     else:
         error('login failed, verify your username/password and try again.')
 
-def makeGOGSession():
+def makeGOGSession(loginSession=False):
     gogSession = requests.Session()
     gogSession.headers={'User-Agent':USER_AGENT}
-    load_cookies()
-    gogSession.cookies.update(global_cookies)
+    if not loginSession:
+        load_cookies()
+        gogSession.cookies.update(global_cookies)
     return gogSession
 
-def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidden,installers,resumemode,strict):
+def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,skipHidden,installers,resumemode,strict):
+
     
     media_type = GOG_MEDIA_TYPE_GAME
     items = []
@@ -1011,6 +999,13 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
  
 
     gamesdb = load_manifest()
+    if not gamesdb and not skipknown and not updateonly:
+        partial = False;
+    
+    if partial:
+        skipknown = True;
+        updateonly = True;
+    
     updateSession = makeGOGSession()
     
     try:    
@@ -1054,7 +1049,7 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
                 info('fetching game product data (page %d)...' % i)
             else:
                 info('fetching game product data (page %d / %d)...' % (i, json_data['totalPages']))
-            data_response = update_request(updateSession,api_url,args={'mediaType': media_type,'sortBy': 'title','page': str(i)})    
+            data_response = request(updateSession,api_url,args={'mediaType': media_type,'sortBy': 'title','page': str(i)})    
             try:
                 json_data = data_response.json()
             except ValueError:
@@ -1096,13 +1091,17 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
                                     done = True
                             else:
                                 continue
-                        if updateonly:
+                                
+                                
+                        if updateonly:        
                             if item.has_updates:
-                                items.append(item)
-                        elif skipknown:
+                                    items.append(item)
+                                    continue
+                        if skipknown:
                             if item.id not in known_ids:
                                 items.append(item)
-                        else:
+                                continue
+                        if not partial:
                             items.append(item)
                     else:        
                         info('skipping "{}" found in product data!'.format(item.title))
@@ -1147,7 +1146,9 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
                         
         # bail if there's nothing to do
         if len(items) == 0:
-            if updateonly:
+            if partial:
+                warn('no new game or updates found.')
+            elif updateonly:
                 warn('no new game updates found.')
             elif skipknown:
                 warn('no new games found.')
@@ -1186,7 +1187,7 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
         info("(%*d / %d) fetching game details for %s..." % (print_padding, i, items_count, item.title))
 
         try:
-            response = update_request(updateSession,api_url)
+            response = request(updateSession,api_url)
             
             item_json_data = response.json()
 
@@ -1241,25 +1242,6 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, ids, skipids,skipHidde
         if (updateonly or skipknown or (resumedbInitLength - len(resumedb)) % RESUME_SAVE_THRESHOLD == 0):
             save_manifest(gamesdb)                
             save_resume_manifest(resumedb)                
-
-    #        # process work items with a thread pool
-    #lock = threading.Lock()
-    #pool = []
-    #for i in range(HTTP_GAME_DOWNLOADER_THREADS):
-    #    t = threading.Thread(target=worker)
-    #    t.daemon = True
-    #    t.start()
-    #    pool.append(t)
-    #try:
-    #    while any(t.is_alive() for t in pool):
-    #        progress()
-    #        time.sleep(1)
-    #except KeyboardInterrupt:
-    #    raise
-    #except:
-    #    with lock:
-    #        log_exception('')
-    #    raise
 
     # save the manifest to disk
     save_manifest(gamesdb)
@@ -1537,6 +1519,10 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
     if dryrun:
         info("{} left to download".format(gigs(sum(sizes.values()))))
         return  # bail, as below just kicks off the actual downloading
+        
+    if work.empty():
+        info("nothing to download")
+        return
     
     downloadSession = makeGOGSession()    
     downloading_root_dir = os.path.join(savedir, DOWNLOADING_DIR_NAME)
@@ -1685,7 +1671,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                         except:    
                                             warn("posix preallocation failed")
                 succeed = False                       
-                response = update_request(downloadSession,href, byte_range=(0,0),stream=False)
+                response = request(downloadSession,href, byte_range=(0,0),stream=False)
                 chunk_tree = fetch_chunk_tree(response,downloadSession)
                 if (chunk_tree is not None):
                     name = chunk_tree.attrib['name']
@@ -1722,7 +1708,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                             downloadSegmentSuccess = False
                                             while (not downloadSegmentSuccess and retries >= 0):
                                                 try:
-                                                    response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
+                                                    response = request(downloadSession,href, byte_range=(start,end),stream=True)
                                                     hdr = response.headers['Content-Range'].split()[-1]
                                                     if hdr != '%d-%d/%d' % (start, end, sz):
                                                         with lock:
@@ -1763,7 +1749,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                         downloadSuccess = False
                         while ((not downloadSuccess) and retries >= 0):
                             try:
-                                response = update_request(downloadSession,href, byte_range=(start,end),stream=True)
+                                response = request(downloadSession,href, byte_range=(start,end),stream=True)
                                 hdr = response.headers['Content-Range'].split()[-1]
                                 if hdr != '%d-%d/%d' % (start, end, sz):
                                     with lock:
@@ -2251,7 +2237,7 @@ def main(args):
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)                
-        cmd_update(args.os, args.lang, args.skipknown, args.updateonly, args.ids, args.skipids,args.skiphidden,args.installers,args.resumemode,args.strictverify)
+        cmd_update(args.os, args.lang, args.skipknown, args.updateonly, not args.full, args.ids, args.skipids,args.skiphidden,args.installers,args.resumemode,args.strictverify)
     elif args.command == 'download':
         if (args.id):
             args.ids = [args.id]
