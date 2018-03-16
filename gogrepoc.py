@@ -5,10 +5,10 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
 
-__appname__ = 'gogrepok.py'
+__appname__ = 'gogrepoc.py'
 __author__ = 'eddie3,kalaynr'
 __version__ = '0.4.0-a'
-__url__ = 'https://github.com/kalanyr/gogrepo'
+__url__ = 'https://github.com/kalanyr/gogrepoc'
 
 # imports
 import os

@@ -1,5 +1,5 @@
-gogrepo
--------
+gogrepo gamma
+--------------
 Python-based tool for downloading your GOG.com game collections and extras to your local computer for full offline enjoyment.
 
 It is a clean standalone python script that can be run from anywhere. It requires a typical Python 2.7 or Python 3 installation and html5lib, requests and pyOpenSSL.
@@ -26,43 +26,43 @@ Quick Start -- Typical Use Case
 
 * Login to GOG and save your login cookie for later commands. Your login/pass can be specified or be prompted. You generally only need to do this once to create a valid gog-cookies.dat
 
-  ``gogrepo.py login``
+  ``gogrepoc.py login``
 
 * Fetch all new and updated game and bonus information from GOG for items that you own and save into a local manifest file. Run this whenever you want to discover newly added games or game updates.
 
-  ``gogrepo.py update``
+  ``gogrepoc.py update``
 
 * Download the games and bonus files for the OS and languages you want for all items known from the saved manifest file.
 
-  ``gogrepo.py download``
+  ``gogrepoc.py download``
 
 * Verify and report integrity of all downloaded files. Does MD5, zip integrity, and expected filesize verification. This makes sure your game files can actually be read back and are healthy.
 
-  ``gogrepo.py verify``
+  ``gogrepoc.py verify``
 
 Advanced Usage -- Common Tasks
 ----------------
 
 * Add new games from your library to the manifest.
 
-  ``gogrepo.py update -os windows -lang en de -skipknown``
+  ``gogrepoc.py update -os windows -lang en de -skipknown``
 
 * Update games with the updated tag in your libary.
 
-  ``gogrepo.py update -os windows -lang en de -updateonly``
+  ``gogrepoc.py update -os windows -lang en de -updateonly``
 
 * Update one or more specified games in your manifest.
 
-  ``gogrepo.py update -ids trine_2_complete_story``
+  ``gogrepoc.py update -ids trine_2_complete_story``
 
 * Download one or more specified games game in your manifest.
 
-  ``gogrepo.py download -ids trine_2_complete_story``
+  ``gogrepoc.py download -ids trine_2_complete_story``
 
 Commands
 --------
 
-``gogrepo.py login`` Authenticate with GOG and save the cookie locally in gog-cookies.dat file. This is needed to do
+``gogrepoc.py login`` Authenticate with GOG and save the cookie locally in gog-cookies.dat file. This is needed to do
 update or download command. Run this once first before doing update and download.
 
     login [-h] [username] [password]
@@ -72,7 +72,7 @@ update or download command. Run this once first before doing update and download
 
 --
 
-``gogrepo.py update`` Fetch game data and information from GOG.com for the specified operating systems and languages. This collects file game titles, download links, serial numbers, MD5/filesize data and saves the data locally in a manifest file. Manifest is saved in a gog-manifest.dat file
+``gogrepoc.py update`` Fetch game data and information from GOG.com for the specified operating systems and languages. This collects file game titles, download links, serial numbers, MD5/filesize data and saves the data locally in a manifest file. Manifest is saved in a gog-manifest.dat file
 
     update [-h] [-os [OS [OS ...]]] [-lang [LANG [LANG ...]]] [-skipknown | -updateonly | -id <title>]
     -h, --help            show this help message and exit
@@ -85,7 +85,7 @@ update or download command. Run this once first before doing update and download
 
 --
 
-``gogrepo.py download`` Use the saved manifest file from an update command, and download all known game items and bonus files.
+``gogrepoc.py download`` Use the saved manifest file from an update command, and download all known game items and bonus files.
 
     download [-h] [-dryrun] [-skipextras] [-skipextras] [-skipgames] [-wait WAIT] [-id <title>] [savedir]
     -h, --help   show this help message and exit
@@ -99,7 +99,7 @@ update or download command. Run this once first before doing update and download
 
 --
 
-``gogrepo.py verify`` Check all your game files against the save manifest data, and verify MD5, zip integrity, and
+``gogrepoc.py verify`` Check all your game files against the save manifest data, and verify MD5, zip integrity, and
 expected file size. Any missing or corrupt files will be reported.
 
     verify [-h] [-skipmd5] [-skipsize] [-skipzip] [-delete] [gamedir]
@@ -112,7 +112,7 @@ expected file size. Any missing or corrupt files will be reported.
 
 --
 
-``gogrepo.py import`` Search an already existing GOG collection for game item/files, and import them to your
+``gogrepoc.py import`` Search an already existing GOG collection for game item/files, and import them to your
 new GOG folder with clean game directory names and file names as GOG has them named on their servers.
 
     import [-h] src_dir dest_dir
@@ -122,7 +122,7 @@ new GOG folder with clean game directory names and file names as GOG has them na
 
 --
 
-``gogrepo.py backup`` Make copies of all known files in manifest file from a source directory to a backup destination directory. Useful for cleaning out older files from your GOG collection.
+``gogrepoc.py backup`` Make copies of all known files in manifest file from a source directory to a backup destination directory. Useful for cleaning out older files from your GOG collection.
 
     backup [-h] src_dir dest_dir
     src_dir     source directory containing gog items
