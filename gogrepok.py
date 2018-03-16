@@ -1,4 +1,3 @@
-#!python3
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -6,9 +5,9 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
 
-__appname__ = 'gogrepo.py'
-__author__ = 'eddie3,kalynr'
-__version__ = 'k0.3a'
+__appname__ = 'gogrepok.py'
+__author__ = 'eddie3,kalaynr'
+__version__ = '0.4.0-a'
 __url__ = 'https://github.com/kalanyr/gogrepo'
 
 # imports
@@ -16,8 +15,6 @@ import os
 import sys
 import threading
 import logging
-#import contextlib
-#import json
 import html5lib
 import pprint
 import time
@@ -29,7 +26,6 @@ import codecs
 import io
 import datetime
 import shutil
-#import socket
 import xml.etree.ElementTree
 import copy
 import logging.handlers
@@ -54,9 +50,10 @@ except ImportError:
     from urllib.parse import urlparse, unquote
     from itertools import zip_longest
     from io import StringIO
-
+    
 if (platform.system() == "Windows"):
     import ctypes.wintypes
+
 
 # python 2 / 3 renames
 try: input = raw_input
@@ -1093,16 +1090,8 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
                                 continue
                                 
                                 
-                        if updateonly:        
-                            if item.has_updates:
-                                    items.append(item)
-                                    continue
-                        if skipknown:
-                            if item.id not in known_ids:
-                                items.append(item)
-                                continue
-                        if not partial:
-                            items.append(item)
+                        if (not partial) or (updateonly and item.has_updates) or (skipknown and item.id not in known_ids):  
+                             items.append(item)
                     else:        
                         info('skipping "{}" found in product data!'.format(item.title))
                     
@@ -2322,9 +2311,129 @@ def main(args):
     info('--')
     info('total time: %s' % (etime - stime))
 
+class Wakelock: 
 
+    def __init__(self):
+        self.pydbusExists = False
+       
+        if (platform.system() == "Windows"):
+            self.ES_CONTINUOUS        = 0x80000000
+            self.ES_AWAYMODE_REQUIRED = 0x00000040
+            self.ES_SYSTEM_REQUIRED   = 0x00000001
+            self.ES_DISPLAY_REQUIRED  = 0x00000002
+            #Windows is not particularly consistent on what is required for a wakelock for a script that often uses a USB device, so define WAKELOCK for easy changing. This works on Windows 10 as of the October 2017 update.  
+            self.WAKELOCK = self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
+            
+        if (platform.system() == "Darwin"):
+            import subprocess
+            
+        if not (platform.system() == "Darwin") or (platform.system() == "Windows"):
+            try:
+                import pydbus
+                self.pydbusExists = True;
+            except ImportError:
+                pass
+
+    def _get_inhibitor(self):
+        try:
+            return GnomeSessionInhibitor()
+        except Exception as e:
+            debug("Could not initialise the gnomesession inhibitor: %s" % e)
+            
+        try:
+            #return DBusInhibitor()
+            pass
+        except Exception as e:
+            pass
+
+        try:
+            return DBusInhibitor('.PowerManagement','Inhibit','org.freedesktop.PowerManagement.Inhibit')
+        except Exception as e:
+            debug("Could not initialise the freedesktop inhibitor: %s" % e)
+
+        try:
+            return DBusInhibitor('org.gnome.PowerManager',None,'org.gnome.PowerManager')
+        except Exception as e:
+            debug("Could not initialise the gnome inhibitor: %s" % e)
+
+        return None
+
+    
+    def take_wakelock(self):    
+        if platform.system() == "Windows":
+            ctypes.windll.kernel32.SetThreadExecutionState(self.WAKELOCK)
+        if platform.system() == "Darwin":
+            bRunning = False;
+            try:
+                self.darwinWake.poll()
+                if (self.darwinWake.returncode == None):
+                    bRunning = True;
+            except NameError:
+                pass
+            if not bRunning:
+                self.darwinWake = subprocess.Popen('caffeinate')
+        if (self.pydbusExists):
+            print("Stuff")
+        
+    def release_wakelock(self):
+        if platform.system() == "Windows":
+            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
+        if platform.system() == "Darwin":
+            try:
+                self.darwinWake.terminate()
+            except NameError:
+                pass
+                
+    class DBusInhibitor:
+        def __init__(self,name, path, interface, method=["Inhibit", "UnInhibit"], system=False ):
+            self.name = name
+            self.path = path
+            self.interface_name = interface
+            self.system = system
+
+            import pydbus
+            if system:
+                bus = pydbus.SystemBus()
+            else:
+                bus = pydbus.SessionBus()
+
+            devobj = bus.get(self.name, self.path)
+            self.iface = devobj[self.interface_name] 
+            # Check we have the right attributes
+            self._inhibit = getattr(self.iface, method[0])
+            self._uninhibit = getattr(self.iface, method[1])
+
+        def inhibit(self):
+            if(self.name == ".login1"):
+                self.cookie = self._inhibit("idle",APPNAME, REASON,"block")
+            else:
+                self.cookie = self._inhibit(APPNAME, REASON)
+
+        def uninhibit(self):
+            self._uninhibit(self.cookie)
+
+
+    class GnomeSessionInhibitor(DBusInhibitor):
+        TOPLEVEL_XID = 0
+        INHIBIT_SUSPEND = 4
+
+        def __init__(self):
+            DBusInhibitor.__init__(self, 'org.gnome.SessionManager',
+                                   '/org/gnome/SessionManager',
+                                   "org.gnome.SessionManager",
+                                   ["Inhibit", "Uninhibit"])
+
+        def inhibit(self):
+            self.cookie = self._inhibit(APPNAME,
+                                        GnomeSessionInhibitor.TOPLEVEL_XID,
+                                        REASON,
+                                        GnomeSessionInhibitor.INHIBIT_SUSPEND)                
+            
+ 
 if __name__ == "__main__":
     try:
+        wakelock = Wakelock()
+        wakelock.take_wakelock()
         main(process_argv(sys.argv))
         info('exiting...')
     except KeyboardInterrupt:
@@ -2335,3 +2444,6 @@ if __name__ == "__main__":
     except:
         log_exception('fatal...')
         sys.exit(1)
+    finally:
+        wakelock.release_wakelock()
+

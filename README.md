@@ -2,7 +2,7 @@ gogrepo
 -------
 Python-based tool for downloading your GOG.com game collections and extras to your local computer for full offline enjoyment.
 
-It is a clean standalone python script that can be run from anywhere. It requires a typical Python 2.7 installation and html5lib.
+It is a clean standalone python script that can be run from anywhere. It requires a typical Python 2.7 or Python 3 installation and html5lib, requests and pyOpenSSL.
 
 By default, game folders are saved in the same location that the script is run in. You can also specify another
 directory. Run gogrepo.py -h to see help or read more below. Each game has its own directories with all game/bonus files saved within.
@@ -16,10 +16,10 @@ Features
 * Creates a !serial.txt if the game has a special serial/cdkey (I know, not 100% DRM-free, is it?). Sometimes coupon codes are hidden here!
 * Verify your downloaded collection with full MD5, zip integrity, and expected file size checking.
 * Auto retrying of failed fetch/downloads. Sometime GOG servers report temporary errors.
+* Download resume support for interrupted downloads where possible.  
 * Ability to import your already existing local collection.
 * Easy to throw into a daily cronjob to get all the latest updates and newly added content!
-* Clear logging prints showing update/download progress and HTTP errors. Easy to pipe or tee to create a log file.
-
+* Clear logging prints showing update/download progress and HTTP errors. Log files are created by default but can be disabled. 
 
 Quick Start -- Typical Use Case
 ----------------
@@ -28,9 +28,9 @@ Quick Start -- Typical Use Case
 
   ``gogrepo.py login``
 
-* Fetch all game and bonus information from GOG for items that you own and save into a local manifest file. Run this whenever you want to discover newly added games or game updates.
+* Fetch all new and updated game and bonus information from GOG for items that you own and save into a local manifest file. Run this whenever you want to discover newly added games or game updates.
 
-  ``gogrepo.py update -os windows linux mac -lang en de fr``
+  ``gogrepo.py update``
 
 * Download the games and bonus files for the OS and languages you want for all items known from the saved manifest file.
 
@@ -51,13 +51,13 @@ Advanced Usage -- Common Tasks
 
   ``gogrepo.py update -os windows -lang en de -updateonly``
 
-* Update a single game in your manifest.
+* Update one or more specified games in your manifest.
 
-  ``gogrepo.py update -os windows -lang en de -id trine_2_complete_story``
+  ``gogrepo.py update -ids trine_2_complete_story``
 
-* Download a single game in your manifest.
+* Download one or more specified games game in your manifest.
 
-  ``gogrepo.py download -id trine_2_complete_story``
+  ``gogrepo.py download -ids trine_2_complete_story``
 
 Commands
 --------
@@ -132,18 +132,28 @@ new GOG folder with clean game directory names and file names as GOG has them na
 
 Requirements
 ------------
-* Python 2.7 (Python 3 support coming soon)
-* html5lib 0.99999 (https://github.com/html5lib/html5lib-python)
-* html2text 2015.6.21 (https://pypi.python.org/pypi/html2text) (optional, used for prettying up gog game changelog html)
-
+* Python 2.7 / Python 3
+* html5lib 0.99999 or later (https://github.com/html5lib/html5lib-python)
+* requests
+* pyOpenSSL
 I recommend you use `pip` to install the above python modules. 
 
   ``pip install html5lib html2text``
 
+Optional
+------------------------
+  
+* html2text 2015.6.21 or later (https://pypi.python.org/pypi/html2text) (optional, used for prettying up gog game changelog html)
+*nix:  
+* dbus-python and required dependencies (*nix, optional, used to prevent suspend/sleep interrupts on *nix, where supported) (this will likely move to pydbus as it matures)
+Mac:
+* caffeinate support (optional, required to prevent suspend/sleep interrupts)
+  
+  
 TODO
 ----
 * ~~add ability to update and download specific games or new-items only~~
-* add 'clean' command to orphan/remove old or unexpected files to keep your collection clean with only the latest files
+* ~~add 'clean' command to orphan/remove old or unexpected files to keep your collection clean with only the latest files
 * support resuming manifest updating
 * ~~add support for incremental manifest updating (ie. only fetch newly added games) rather than fetching entire collection information~~
 * ability to customize/remap default game directory name
