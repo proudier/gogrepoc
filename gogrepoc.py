@@ -126,7 +126,7 @@ HTTP_TIMEOUT = 30
 
 HTTP_GAME_DOWNLOADER_THREADS = 4
 HTTP_PERM_ERRORCODES = (404, 403, 503)
-USER_AGENT = 'GOGRepoK/' + str(__version__)
+USER_AGENT = 'GOGRepoC/' + str(__version__)
 
 # Language table that maps two letter language to their unicode gogapi json name
 LANG_TABLE = {'en': u'English',   # English
