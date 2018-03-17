@@ -2312,6 +2312,7 @@ def main(args):
     info('total time: %s' % (etime - stime))
 
 class Wakelock: 
+    #Mac Sleep support based on caffeine : https://github.com/jpn--/caffeine by Jeffrey Newman
 
     def __init__(self):
         self.pydbusExists = False
@@ -2322,17 +2323,45 @@ class Wakelock:
             self.ES_SYSTEM_REQUIRED   = 0x00000001
             self.ES_DISPLAY_REQUIRED  = 0x00000002
             #Windows is not particularly consistent on what is required for a wakelock for a script that often uses a USB device, so define WAKELOCK for easy changing. This works on Windows 10 as of the October 2017 update.  
-            self.WAKELOCK = self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
+            self.ES_WAKELOCK = self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
             
         if (platform.system() == "Darwin"):
-            import subprocess
+            import CoreFoundation #import CFStringCreateWithCString, CFRelease, kCFStringEncodingASCII
+            import objc #import pyobjc_id
             
+            self.PM_NODISPLAYSLEEP = 'NoDisplaySleepAssertion'
+            self.PM_NOIDLESLEEP = "NoIdleSleepAssertion"
+            self.PM_WAKELOCK = SELF.PM_NOIDLESLEEP
+            self._kIOPMAssertionLevelOn = 255
+            
+            self.libIOKit = ctypes.cdll.LoadLibrary('/System/Library/Frameworks/IOKit.framework/IOKit')
+            self.libIOKit.IOPMAssertionCreateWithName.argtypes = [ ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32) ]
+            self.libIOKit.IOPMAssertionRelease.argtypes = [ ctypes.c_uint32 ]
+            self._PMassertion = None 
+            self._PMassertID = ctypes.c_uint32(0) 
+            self._PMerrcode = None
         if not (platform.system() == "Darwin") or (platform.system() == "Windows"):
             try:
                 import pydbus
                 self.pydbusExists = True;
             except ImportError:
                 pass
+                
+                
+    def _CFSTR(self,py_string):
+        return CoreFoundation.CFStringCreateWithCString(None, py_string, CoreFoundation.kCFStringEncodingASCII)
+
+    def raw_ptr(self,pyobjc_string):
+        return objc.pyobjc_id(pyobjc_string.nsstring())
+
+    def _IOPMAssertionCreateWithName(self,assert_name, assert_level, assert_msg):
+        assertID = ctypes.c_uint32(0)
+        p_assert_name = self.raw_ptr(self._CFSTR(assert_name))
+        p_assert_msg = self.raw_ptr(self._CFSTR(assert_msg))
+        errcode = libIOKit.IOPMAssertionCreateWithName(p_assert_name,
+            assert_level, p_assert_msg, ctypes.byref(assertID))
+        return (errcode, assertID)
+                    
 
     def _get_inhibitor(self):
         try:
@@ -2361,17 +2390,13 @@ class Wakelock:
     
     def take_wakelock(self):    
         if platform.system() == "Windows":
-            ctypes.windll.kernel32.SetThreadExecutionState(self.WAKELOCK)
+            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_WAKELOCK)
         if platform.system() == "Darwin":
-            bRunning = False;
-            try:
-                self.darwinWake.poll()
-                if (self.darwinWake.returncode == None):
-                    bRunning = True;
-            except NameError:
-                pass
-            if not bRunning:
-                self.darwinWake = subprocess.Popen('caffeinate')
+            a = self.PM_WAKELOCK
+            if a != self._PMassertion:
+                self.releaseWakelock()
+            if self._assertID.value ==0:
+                self._PMerrcode, self._PMassertID = self._IOPMAssertionCreateWithName(a,self._kIOPMAssertionLevelOn,"gogrepoc")
         if (self.pydbusExists):
             print("Stuff")
         
@@ -2379,10 +2404,8 @@ class Wakelock:
         if platform.system() == "Windows":
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
         if platform.system() == "Darwin":
-            try:
-                self.darwinWake.terminate()
-            except NameError:
-                pass
+            self._PMerrcode = self._IOPMAssertionRelease(self._assertID)
+            self._PMassertID.value = 0
                 
     class DBusInhibitor:
         def __init__(self,name, path, interface, method=["Inhibit", "UnInhibit"], system=False ):
