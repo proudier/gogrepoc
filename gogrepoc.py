@@ -53,6 +53,17 @@ except ImportError:
     
 if (platform.system() == "Windows"):
     import ctypes.wintypes
+    
+if (platform.system() == "Darwin"):
+    import CoreFoundation #import CFStringCreateWithCString, CFRelease, kCFStringEncodingASCII
+    import objc #import pyobjc_id
+
+if not ((platform.system() == "Darwin") or (platform.system() == "Windows")):
+    try:
+        import PyQt5.QtDBus
+    except ImportError:
+        pass
+    
 
 
 # python 2 / 3 renames
@@ -2315,7 +2326,6 @@ class Wakelock:
     #Mac Sleep support based on caffeine : https://github.com/jpn--/caffeine by Jeffrey Newman
 
     def __init__(self):
-        self.pydbusExists = False
        
         if (platform.system() == "Windows"):
             self.ES_CONTINUOUS        = 0x80000000
@@ -2326,12 +2336,10 @@ class Wakelock:
             self.ES_WAKELOCK = self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
             
         if (platform.system() == "Darwin"):
-            import CoreFoundation #import CFStringCreateWithCString, CFRelease, kCFStringEncodingASCII
-            import objc #import pyobjc_id
             
             self.PM_NODISPLAYSLEEP = 'NoDisplaySleepAssertion'
             self.PM_NOIDLESLEEP = "NoIdleSleepAssertion"
-            self.PM_WAKELOCK = SELF.PM_NOIDLESLEEP
+            self.PM_WAKELOCK = self.PM_NOIDLESLEEP
             self._kIOPMAssertionLevelOn = 255
             
             self.libIOKit = ctypes.cdll.LoadLibrary('/System/Library/Frameworks/IOKit.framework/IOKit')
@@ -2340,12 +2348,6 @@ class Wakelock:
             self._PMassertion = None 
             self._PMassertID = ctypes.c_uint32(0) 
             self._PMerrcode = None
-        if not (platform.system() == "Darwin") or (platform.system() == "Windows"):
-            try:
-                import pydbus
-                self.pydbusExists = True;
-            except ImportError:
-                pass
                 
                 
     def _CFSTR(self,py_string):
@@ -2364,26 +2366,28 @@ class Wakelock:
                     
 
     def _get_inhibitor(self):
-        try:
-            return GnomeSessionInhibitor()
-        except Exception as e:
-            debug("Could not initialise the gnomesession inhibitor: %s" % e)
+        #try:
+        #    return GnomeSessionInhibitor()
+        #except Exception as e:
+        #    debug("Could not initialise the gnomesession inhibitor: %s" % e)
+
+        #try:
+        #    return DBusSessionInhibitor('org.gnome.PowerManager',"/org/gnome/PowerManager",'org.gnome.PowerManager')
+        #except Exception as e:
+        #    debug("Could not initialise the gnome power manager inhibitor: %s" % e)
+            
+
+        #try:
+        #    return DBusSessionInhibitor('.org.freedesktop.PowerManagement','/org/freedesktop/PowerManagement/Inhibit','org.freedesktop.PowerManagement.Inhibit')
+        #except Exception as e:
+        #    debug("Could not initialise the freedesktop power management inhibitor: %s" % e)
+
             
         try:
-            #return DBusInhibitor()
-            pass
+            return DBusSystemInhibitor('org.freedesktop.login1','/org/freedesktop/login1','org.freedesktop.login1.Manager')
         except Exception as e:
-            pass
-
-        try:
-            return DBusInhibitor('.PowerManagement','Inhibit','org.freedesktop.PowerManagement.Inhibit')
-        except Exception as e:
-            debug("Could not initialise the freedesktop inhibitor: %s" % e)
-
-        try:
-            return DBusInhibitor('org.gnome.PowerManager',None,'org.gnome.PowerManager')
-        except Exception as e:
-            debug("Could not initialise the gnome inhibitor: %s" % e)
+            warn("Could not initialise the systemd session inhibitor: %s" % e)
+            
 
         return None
 
@@ -2397,8 +2401,9 @@ class Wakelock:
                 self.releaseWakelock()
             if self._assertID.value ==0:
                 self._PMerrcode, self._PMassertID = self._IOPMAssertionCreateWithName(a,self._kIOPMAssertionLevelOn,"gogrepoc")
-        if (self.pydbusExists):
-            print("Stuff")
+        if (not (platform.system() == "Windows" or platform.system() == "Darwin")) and  ('PyQt5.QtDBus' in sys.modules):
+            self.inhibitor = self._get_inhibitor()
+            self.inhibitor.inhibit()
         
     def release_wakelock(self):
         if platform.system() == "Windows":
@@ -2406,51 +2411,80 @@ class Wakelock:
         if platform.system() == "Darwin":
             self._PMerrcode = self._IOPMAssertionRelease(self._assertID)
             self._PMassertID.value = 0
+            
+class DBusSystemInhibitor:
+    
+    def __init__(self,name,path,interface,method=["Inhibit"]):
+        self.name = name
+        self.path = path
+        self.interface_name = interface
+        self.method = method
+        self.cookie = None
+        self.APPNAME = "GOGRepo Gamma"
+        self.REASON = "Using Internet and USB Connection"
+        bus = PyQt5.QtDBus.QDBusConnection.systemBus()
+        introspection = PyQt5.QtDBus.QDBusInterface(self.name,self.path,"org.freedesktop.DBus.Introspectable",bus) 
+        serviceIntrospection = xml.etree.ElementTree.fromstring(PyQt5.QtDBus.QDBusReply(introspection.call("Introspect")).value())
+        methodExists = False;                                             
+        for interface in serviceIntrospection.iter("interface"):
+            if interface.get('name') == self.interface_name:      
+                for method in interface.iter("method"):
+                    if method.get('name') == self.method[0]:
+                        methodExists = True
+        if not methodExists:
+            raise AttributeError(self.interface_name + "has no method " + self.method[0])
+        self.iface = PyQt5.QtDBus.QDBusInterface(self.name,self.path,self.interface_name,bus)   
+        
+    def inhibit(self):
+        if self.cookie is None:
+            reply = PyQt5.QtDBus.QDBusReply(self.iface.call(self.method[0],"idle",self.APPNAME, self.REASON,"block"))
+            if reply.isValid():
+                self.cookie = reply.value()
+        
+    def uninhibit(self):
+        if (self.cookie is not None):
+            pass #It's not possible to realise this file handle in QtDBus (since the QDUnixFileDescriptor is a copy). The file handle is automatically released when the program exits. 
                 
-    class DBusInhibitor:
-        def __init__(self,name, path, interface, method=["Inhibit", "UnInhibit"], system=False ):
-            self.name = name
-            self.path = path
-            self.interface_name = interface
-            self.system = system
-
-            import pydbus
-            if system:
-                bus = pydbus.SystemBus()
-            else:
-                bus = pydbus.SessionBus()
-
-            devobj = bus.get(self.name, self.path)
-            self.iface = devobj[self.interface_name] 
-            # Check we have the right attributes
-            self._inhibit = getattr(self.iface, method[0])
-            self._uninhibit = getattr(self.iface, method[1])
-
-        def inhibit(self):
-            if(self.name == ".login1"):
-                self.cookie = self._inhibit("idle",APPNAME, REASON,"block")
-            else:
-                self.cookie = self._inhibit(APPNAME, REASON)
-
-        def uninhibit(self):
-            self._uninhibit(self.cookie)
 
 
-    class GnomeSessionInhibitor(DBusInhibitor):
-        TOPLEVEL_XID = 0
-        INHIBIT_SUSPEND = 4
+            
+class DBusSessionInhibitor:
+    def __init__(self,name, path, interface, methods=["Inhibit", "UnInhibit"] ):
+        self.name = name
+        self.path = path
+        self.interface_name = interface
+        self.methods = methods
+        self.cookie = None
+        self.APPNAME = "GOGRepo Gamma"
+        self.REASON = "Using Internet and USB Connection"
 
-        def __init__(self):
-            DBusInhibitor.__init__(self, 'org.gnome.SessionManager',
-                                   '/org/gnome/SessionManager',
-                                   "org.gnome.SessionManager",
-                                   ["Inhibit", "Uninhibit"])
+        bus = PyQt5.QtDBus.QDBusConnection.sessionBus()
+        self.iface = PyQt5.QtDBus.QDBusInterface(self.name,self.path,self.interface_name,bus)   
 
-        def inhibit(self):
-            self.cookie = self._inhibit(APPNAME,
-                                        GnomeSessionInhibitor.TOPLEVEL_XID,
-                                        REASON,
-                                        GnomeSessionInhibitor.INHIBIT_SUSPEND)                
+
+    def inhibit(self):
+        if self.cookie is None:
+            self.cookie = PyQt5.QtDbus.QDBusReply(self.iface.call(self.methods[0],self.APPNAME, self.REASON)).value()
+
+    def uninhibit(self):
+        if self.cookie is not None:
+            self.iface.call(self.methods[1],self.cookie)
+            self.cookie = None
+
+class GnomeSessionInhibitor(DBusSessionInhibitor):
+    TOPLEVEL_XID = 0
+    INHIBIT_SUSPEND = 4
+
+    def __init__(self):
+        DBusSessionInhibitor.__init__(self, 'org.gnome.SessionManager',
+                                '/org/gnome/SessionManager',
+                                "org.gnome.SessionManager",
+                                ["Inhibit", "Uninhibit"])
+
+    def inhibit(self):
+        if self.cookie is None:
+            self.cookie = PyQt5.QtDbus.QDBusReply(self.iface.call(self.methods[0],self.APPNAME,GnomeSessionInhibitor.TOPLEVEL_XID, self.REASON),GnomeSessionInhibitor.INHIBIT_SUSPEND).value()
+            
             
  
 if __name__ == "__main__":
