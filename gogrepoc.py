@@ -866,11 +866,19 @@ def process_argv(argv):
     g1.add_argument('-skipshared',action='store_true',help ='skip verification of any installers included in both the GOG Galalaxy and Standalone sets')
     g1.add_argument('-nolog', action='store_true', help = 'doesn\'t writes log file gogrepo.log')
 
-
     g1 = sp1.add_parser('clean', help='Clean your games directory of files not known by manifest')
     g1.add_argument('cleandir', action='store', help='root directory containing gog games to be cleaned')
     g1.add_argument('-dryrun', action='store_true', help='do not move files, only display what would be cleaned')
     g1.add_argument('-nolog', action='store_true', help = 'doesn\'t writes log file gogrepo.log')
+
+
+    g1 = sp1.add_parser('trash', help='Parmanently remove orphaned files in your game directory')
+    g1.add_argument('gamedir', action='store', help='root directory containing gog games')
+    g1.add_argument('-dryrun', action='store_true', help='do not move files, only display what would be trashed')
+    g1.add_argument('-installersonly', action='store_true', help='only delete file types used as installers')
+    g1.add_argument('-nolog', action='store_true', help = 'doesn\'t writes log file gogrepo.log')
+    
+    
 
     g1 = p1.add_argument_group('other')
     g1.add_argument('-h', '--help', action='help', help='show help message and exit')
@@ -2141,21 +2149,33 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
     if clean_on_fail:
         info('cleaned items....... %d' % clean_file_cnt)
         
-def cmd_trash(cleandir,installersonly):
-    downloading_root_dir = os.path.join(cleandir, DOWNLOADING_DIR_NAME)
+def cmd_trash(cleandir,installersonly,dryrun):
+    downloading_root_dir = os.path.join(cleandir, ORPHAN_DIR_NAME)
     for dir in os.listdir(downloading_root_dir):
         testdir= os.path.join(downloading_root_dir,dir)
         if os.path.isdir(testdir):
             if not installersonly:
                 try:
-                    os.rmdir(testdir)
+                    if (not dryrun):
+                        shutil.rmtree(testdir)
+                    info("Deleting " + testdir)
                 except:
-                    pass
+                    error("Failed to delete directory: " + testdir)
             else: 
-                #List dir. 
-                #Delete all installers (exe/bin/dmg/sh)
-                #Remove dir if now empty
-                pass
+                contents = os.listdir(testdir)
+                deletecontents = [x for x in contents if os.path.splitext(x)[1] in INSTALLERS_EXT]
+                for content in deletecontents:
+                    contentpath = os.path.join(testdir,content)
+                    if (not dryrun):
+                        os.remove(contentpath)
+                    info("Deleting " + contentpath )
+                try:
+                    if (not dryrun):
+                        os.rmdir(testdir)
+                        info("Removed empty directory " + testdir)
+                except OSError:
+                    pass
+                
         
 
 def cmd_clean(cleandir, dryrun):
@@ -2317,6 +2337,8 @@ def main(args):
         cmd_backup(args.src_dir, args.dest_dir,args.skipextras,args.os,args.lang,args.ids,args.skipids,args.skipgalaxy,args.skipstandalone,args.skipshared)
     elif args.command == 'clean':
         cmd_clean(args.cleandir, args.dryrun)
+    elif args.command == "trash":
+        cmd_trash(args.gamedir,args.installersonly,args.dryrun)
 
     etime = datetime.datetime.now()
     info('--')
