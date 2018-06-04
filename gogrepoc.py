@@ -760,13 +760,13 @@ def process_argv(argv):
     g1.add_argument('-skiphidden',action='store_true',help='skip games marked as hidden')
     g1.add_argument('-installers', action='store', choices = ['galaxy','standalone','both'], default = 'standalone',  help='GOG Installer type to use: galaxy, standalone or both. Default: standalone ')    
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive
+    g4.add_argument('-standard', action='store_true', help='new and updated games only (default unless -ids used)')    
     g4.add_argument('-skipknown', action='store_true', help='skip games already known by manifest')
     g4.add_argument('-updateonly', action='store_true', help='only games marked with the update tag')
-    g4.add_argument('-full', action='store_true', help='all games on your account')    
+    g4.add_argument('-full', action='store_true', help='all games on your account (default if -ids used)')    
     g5 = g1.add_mutually_exclusive_group()  # below are mutually exclusive
     g5.add_argument('-ids', action='store', help='id(s)/titles(s) of (a) specific game(s) to update', nargs='*', default=[])
     g5.add_argument('-skipids', action='store', help='id(s)/titles(s) of (a) specific game(s) not to update', nargs='*', default=[])
-    g5.add_argument('-id', action='store', help='(deprecated) id or title of the game in the manifest to download')
     g1.add_argument('-wait', action='store', type=float,
                     help='wait this long in hours before starting', default=0.0)  # sleep in hr
     g1.add_argument('-nolog', action='store_true', help = 'doesn\'t writes log file gogrepo.log')
@@ -2242,8 +2242,6 @@ def main(args):
         cmd_login(args.username, args.password)
         return  # no need to see time stats
     elif args.command == 'update':
-        if (args.id):
-            args.ids = [args.id]
         if not args.os:    
             if args.skipos:
                 args.os = [x for x in VALID_OS_TYPES if x not in args.skipos]
@@ -2254,6 +2252,9 @@ def main(args):
                 args.lang = [x for x in VALID_LANG_TYPES if x not in args.skiplang]
             else:
                 args.lang = DEFAULT_LANG_LIST
+        if (not args.skipknown) and (not args.updateonly) and (not args.standard):         
+            if (args.ids):
+                args.full = True
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)                
