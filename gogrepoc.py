@@ -121,6 +121,10 @@ INFO_FILENAME = r'!info.txt'
 # global web utilities
 global_cookies = cookiejar.LWPCookieJar(COOKIES_FILENAME)
 
+#github API URLs
+REPO_HOME_URL = "https://api.github.com/repos/kalanyr/gogrepo" 
+NEW_RELEASE_URL = "/releases/latest"
+
 # GOG URLs
 GOG_HOME_URL = r'https://www.gog.com'
 GOG_ACCOUNT_URL = r'https://www.gog.com/account'
@@ -451,6 +455,15 @@ def handle_game_renames(savedir,gamesdb,dryrun):
         os.makedirs(orphan_root_dir)
 
     for game in gamesdb:
+        try:
+            _ = game.galaxyDownloads
+        except KeyError:
+            game.galaxyDownloads = []
+            
+        try:
+            a = game.sharedDownloads
+        except KeyError:
+            game.sharedDownloads = []
         try: 
             _ = game.old_title 
         except AttributeError:
@@ -915,7 +928,6 @@ def process_argv(argv):
     return args
 
 
-
 # --------
 # Commands
 # --------
@@ -1004,6 +1016,11 @@ def cmd_login(user, passwd):
     else:
         error('login failed, verify your username/password and try again.')
 
+def makeGitHubSession(authenticatedSession=False):
+    gitSession = requests.Session()
+    gitSession.headers={'User-Agent':USER_AGENT,'Accept':'application/vnd.github.v3+json'}
+    return gitSession    
+        
 def makeGOGSession(loginSession=False):
     gogSession = requests.Session()
     gogSession.headers={'User-Agent':USER_AGENT}
@@ -2264,6 +2281,51 @@ def cmd_clean(cleandir, dryrun):
             info('orphaned items moved to: {}'.format(orphan_root_dir))
     else:
         info('nothing to clean. nice and tidy!')
+
+def update_self():
+    #To-Do: add auto-update to main using Last-Modified (repo for rolling, latest release for standard)
+    #Add a dev mode which skips auto-updates and a manual update command which can specify rolling/standard
+    # Since 302 is not an error can use the standard session handling for this. Rewrite appropriately 
+    gitSession = makeGitHubSession()
+    #if mode = Standard
+    response = gitSession.get(REPO_HOME_URL+NEW_RELEASE_URL,stream="False",timeout=HTTP_TIMEOUT,headers={'If-Modified-Since':'Mon, 16 Jul 2018 08:51:22 GMT'})       
+    response.raise_for_status()    
+    if response.status_code == 304:
+        print("Not Modified")
+        sys.exit()
+    print(response.headers)    
+    jsonResponse = response.json()
+    print(response.headers)
+    print(jsonResponse)
+    with codecs.open('updatetest.test', 'w', 'utf-8') as w:
+        print(response.headers)
+        print(jsonResponse, file=w)    
+    response = gitSession.get(jsonResponse['tarball_url'],stream="False",timeout=HTTP_TIMEOUT)
+    response.raise_for_status()
+    rawResponse = response.content
+    print(response.headers)
+    with codecs.open('tarballupdatetest.test', 'w', 'utf-8') as w:
+        print(response.headers,file=w)
+    with open_notrunc('update.tar.gz') as w:    
+        w.write(rawResponse)
+    
+    #if mode = Rolling
+    response = gitSession.get(REPO_HOME_URL,stream="False",timeout=HTTP_TIMEOUT)        
+    response.raise_for_status()    
+    jsonResponse = response.json()
+    print(response.headers)
+    print(jsonResponse)
+    with codecs.open('rollingupdatetest.test', 'w', 'utf-8') as w:
+        print(response.headers,file=w)
+        print(jsonResponse, file=w)    
+    response = gitSession.get(REPO_HOME_URL+"/tarball/master",stream="False",timeout=HTTP_TIMEOUT)        
+    response.raise_for_status()    
+    rawResponse = response.content
+    print(response.headers)
+    with codecs.open('tarballrollingupdatetest.test', 'w', 'utf-8') as w:
+        print(response.headers,file=w)
+    with open_notrunc('rolling.tar.gz') as w:    
+        w.write(rawResponse)
 
 
 def main(args):
