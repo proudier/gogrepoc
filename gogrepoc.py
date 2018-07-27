@@ -35,6 +35,7 @@ import re
 import OpenSSL
 import platform
 import locale
+from fnmatch import fnmatch
 # python 2 / 3 imports
 try:
     # python 2
@@ -120,17 +121,10 @@ INFO_FILENAME = r'!info.txt'
 # global web utilities
 global_cookies = cookiejar.LWPCookieJar(COOKIES_FILENAME)
 
-#github API URLs
-REPO_HOME_URL = "https://api.github.com/repos/kalanyr/gogrepo" 
-NEW_RELEASE_URL = "/releases/latest"
-
-
-
 # GOG URLs
 GOG_HOME_URL = r'https://www.gog.com'
 GOG_ACCOUNT_URL = r'https://www.gog.com/account'
 GOG_LOGIN_URL = r'https://login.gog.com/login_check'
-
 
 # GOG Constants
 GOG_MEDIA_TYPE_GAME  = '1'
@@ -457,15 +451,6 @@ def handle_game_renames(savedir,gamesdb,dryrun):
         os.makedirs(orphan_root_dir)
 
     for game in gamesdb:
-        try:
-            _ = game.galaxyDownloads
-        except KeyError:
-            game.galaxyDownloads = []
-            
-        try:
-            a = game.sharedDownloads
-        except KeyError:
-            game.sharedDownloads = []
         try: 
             _ = game.old_title 
         except AttributeError:
@@ -735,7 +720,14 @@ def deDuplicateName(potentialItem,clashDict):
         #No Name Clash
         clashDict[potentialItem.name] = [(potentialItem.md5,potentialItem.size)]
         return potentialItem.name   
-        
+
+def check_skip_file(fname, skipfiles):
+    # return pattern that matched, or None
+    for skipf in skipfiles:
+        if fnmatch(fname, skipf):
+            return skipf
+    return None
+
 def process_path(path):
     fpath = path
     if sys.version_info[0] <= 2:
@@ -869,6 +861,7 @@ def process_argv(argv):
     g3.add_argument('-ids', action='store', help='id(s) or title(s) of the game in the manifest to verify', nargs='*', default=[])
     g3.add_argument('-skipids', action='store', help='id(s) or title(s) of the game[s] in the manifest to NOT verify', nargs='*', default=[])
     g3.add_argument('-id', action='store', help='(deprecated) id or title of the game in the manifest to verify')    
+    g1.add_argument('-skipfiles', action='store', help='file name (or glob patterns) to NOT verify', nargs='*', default=[])
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
     g4.add_argument('-skipos', action='store', help='skip verification of game files for operating system(s)', nargs='*', default=[])  
     g4.add_argument('-os', action='store', help='verify game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
@@ -920,6 +913,7 @@ def process_argv(argv):
                 raise SystemExit(1)
 
     return args
+
 
 
 # --------
@@ -1010,11 +1004,6 @@ def cmd_login(user, passwd):
     else:
         error('login failed, verify your username/password and try again.')
 
-def makeGitHubSession(authenticatedSession=False):
-    gitSession = requests.Session()
-    gitSession.headers={'User-Agent':USER_AGENT,'Accept':'application/vnd.github.v3+json'}
-    return gitSession    
-        
 def makeGOGSession(loginSession=False):
     gogSession = requests.Session()
     gogSession.headers={'User-Agent':USER_AGENT}
@@ -1365,7 +1354,7 @@ def cmd_import(src_dir, dest_dir,os_list,lang_list,skipextras,skipids,ids,skipga
             shutil.copy(f, dest_file)
 
 
-def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,skipgalaxy,skipstandalone,skipshared):
+def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,skipgalaxy,skipstandalone,skipshared, skipfiles):
     sizes, rates, errors = {}, {}, {}
     work = Queue()  # build a list of work items
 
@@ -1392,6 +1381,10 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
         info("skipping games with id(s): {%s}" % formattedSkipIds)
         downloadItems = [item for item in items if item.title not in skipids and str(item.id) not in skipids]
         items = downloadItems
+
+    if skipfiles:
+        formattedSkipFiles = "'" + "', '".join(skipfiles) + "'"
+        info("skipping files that match: {%s}" % formattedSkipFiles)
         
     if not items:
         if ids and skipids:
@@ -1518,19 +1511,23 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                     item.serial = item.serial.replace(u'<span>', '')
                     item.serial = item.serial.replace(u'</span>', os.linesep)
                     fd_serial.write(item.serial)
-                    
-                    
 
         # Populate queue with all files to be downloaded
         for game_item in item.downloads + item.galaxyDownloads + item.sharedDownloads + item.extras:
             if game_item.name is None:
                 continue  # no game name, usually due to 404 during file fetch
+
+            skipfile_skip = check_skip_file(game_item.name, skipfiles)
+            if skipfile_skip:
+                info('     skip       %s (matches "%s")' % (game_item.name, skipfile_skip))
+                continue
+
             dest_file = os.path.join(item_homedir, game_item.name)
             downloading_file = os.path.join(item_downloaddir, game_item.name)
 
             if os.path.isfile(dest_file):
                 if game_item.size is None:
-                    warn('     unknown    %s has no size info.  skipping')
+                    warn('     unknown    %s has no size info.  skipping' % game_item.name)
                     continue
                 elif game_item.size != os.path.getsize(dest_file):
                     warn('     fail       %s has incorrect size.' % game_item.name)
@@ -1966,7 +1963,7 @@ def cmd_backup(src_dir, dest_dir,skipextras,os_list,lang_list,ids,skipids,skipga
                     shutil.copy(os.path.join(src_game_dir, extra_file), dest_game_dir)
 
 
-def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_zips, delete_on_fail, clean_on_fail, ids, os_list, lang_list, skipgalaxy,skipstandalone,skipshared,force_verify):
+def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_zips, delete_on_fail, clean_on_fail, ids, os_list, lang_list, skipgalaxy,skipstandalone,skipshared, skipfiles, force_verify):
     """Verifies all game files match manifest with any available md5 & file size info
     """
     item_count = 0
@@ -1977,6 +1974,7 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
     del_file_cnt = 0
     clean_file_cnt = 0
     prev_verified_cnt = 0
+    skip_cnt = 0
 
     items = load_manifest()
     
@@ -2005,6 +2003,10 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
         info('verifying all known files in the manifest')        
         games_to_check =  games_to_check_base    
         
+    if skipfiles:
+        formattedSkipFiles = "'" + "', '".join(skipfiles) + "'"
+        info("skipping files that match: {%s}" % formattedSkipFiles)
+    
     handle_game_renames(gamedir,items,False)
         
     
@@ -2087,8 +2089,14 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
             if itm.name is None:
                 warn('no known filename for "%s (%s)"' % (game.title, itm.desc))
                 continue
-                                
+
             item_count += 1
+
+            skipfile_skip = check_skip_file(itm.name, skipfiles)
+            if skipfile_skip:
+                info('skipping %s (matches %s)' % (itm.name, skipfile_skip))
+                skip_cnt += 1
+                continue
 
             itm_dirpath = os.path.join(game.title, itm.name)
             itm_file = os.path.join(gamedir, game.title, itm.name)
@@ -2159,6 +2167,7 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
     if not force_verify:
         info('pre-verified items.. %d' % prev_verified_cnt)    
     info('have items.......... %d' % (item_count - missing_cnt - del_file_cnt - clean_file_cnt))
+    info('skipped items....... %d' % skip_cnt)
     info('missing items....... %d' % (missing_cnt + del_file_cnt + clean_file_cnt))
     if check_md5:
         info('md5 mismatches...... %d' % bad_md5_cnt)
@@ -2256,51 +2265,6 @@ def cmd_clean(cleandir, dryrun):
     else:
         info('nothing to clean. nice and tidy!')
 
-def update_self():
-    #To-Do: add auto-update to main using Last-Modified (repo for rolling, latest release for standard)
-    #Add a dev mode which skips auto-updates and a manual update command which can specify rolling/standard
-    # Since 302 is not an error can use the standard session handling for this. Rewrite appropriately 
-    gitSession = makeGitHubSession()
-    #if mode = Standard
-    response = gitSession.get(REPO_HOME_URL+NEW_RELEASE_URL,stream="False",timeout=HTTP_TIMEOUT,headers={'If-Modified-Since':'Mon, 16 Jul 2018 08:51:22 GMT'})       
-    response.raise_for_status()    
-    if response.status_code == 304:
-        print("Not Modified")
-        sys.exit()
-    print(response.headers)    
-    jsonResponse = response.json()
-    print(response.headers)
-    print(jsonResponse)
-    with codecs.open('updatetest.test', 'w', 'utf-8') as w:
-        print(response.headers)
-        print(jsonResponse, file=w)    
-    response = gitSession.get(jsonResponse['tarball_url'],stream="False",timeout=HTTP_TIMEOUT)
-    response.raise_for_status()
-    rawResponse = response.content
-    print(response.headers)
-    with codecs.open('tarballupdatetest.test', 'w', 'utf-8') as w:
-        print(response.headers,file=w)
-    with open_notrunc('update.tar.gz') as w:    
-        w.write(rawResponse)
-    
-    #if mode = Rolling
-    response = gitSession.get(REPO_HOME_URL,stream="False",timeout=HTTP_TIMEOUT)        
-    response.raise_for_status()    
-    jsonResponse = response.json()
-    print(response.headers)
-    print(jsonResponse)
-    with codecs.open('rollingupdatetest.test', 'w', 'utf-8') as w:
-        print(response.headers,file=w)
-        print(jsonResponse, file=w)    
-    response = gitSession.get(REPO_HOME_URL+"/tarball/master",stream="False",timeout=HTTP_TIMEOUT)        
-    response.raise_for_status()    
-    rawResponse = response.content
-    print(response.headers)
-    with codecs.open('tarballrollingupdatetest.test', 'w', 'utf-8') as w:
-        print(response.headers,file=w)
-    with open_notrunc('rolling.tar.gz') as w:    
-        w.write(rawResponse)
-
 
 def main(args):
     stime = datetime.datetime.now()
@@ -2346,7 +2310,7 @@ def main(args):
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)
-        cmd_download(args.savedir, args.skipextras, args.skipids, args.dryrun, args.ids,args.os,args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared)
+        cmd_download(args.savedir, args.skipextras, args.skipids, args.dryrun, args.ids,args.os,args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.skipfiles)
     elif args.command == 'import':
         #Hardcode these as false since extras currently do not have MD5s as such skipgames would give nothing and skipextras would change nothing. The logic path and arguments are present in case this changes, though commented out in the case of arguments)
         args.skipgames = False
@@ -2386,7 +2350,7 @@ def main(args):
         check_md5 = not args.skipmd5
         check_filesize = not args.skipsize
         check_zips = not args.skipzip
-        cmd_verify(args.gamedir, args.skipextras,args.skipids,check_md5, check_filesize, check_zips, args.delete, args.clean,args.ids,  args.os, args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.forceverify)
+        cmd_verify(args.gamedir, args.skipextras,args.skipids,check_md5, check_filesize, check_zips, args.delete, args.clean,args.ids,  args.os, args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.skipfiles, args.forceverify)
     elif args.command == 'backup':
         if not args.os:    
             if args.skipos:
