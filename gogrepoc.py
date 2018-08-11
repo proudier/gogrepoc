@@ -962,8 +962,19 @@ def cmd_login(user, passwd):
     etree = html5lib.parse(page_response.text, namespaceHTMLElements=False)
     for elm in etree.findall('.//script'):
         if elm.text is not None and 'GalaxyAccounts' in elm.text:
-            login_data['auth_url'] = elm.text.split("'")[1]
-            break
+            authCandidates = elm.text.split("'")
+            for authCandidate in authCandidates:
+                if 'auth' in authCandidate:
+                    testAuth = urlparse(authCandidate)
+                    if testAuth.scheme == "https":
+                        login_data['auth_url'] = authCandidate
+                        break
+            if login_data['auth_url']:
+                break
+                
+    if not login_data['auth_url']:
+        error("cannot find auth url, please report to the maintainer")
+        exit()
 
     page_response = request(loginSession,login_data['auth_url'])          
     # fetch the login token
@@ -2264,16 +2275,24 @@ def cmd_clean(cleandir, dryrun):
                         continue  # leave subdirs alone
                     if cur_dir_file not in expected_filenames and cur_dir_file not in ORPHAN_FILE_EXCLUDE_LIST:
                         info("orphaning file '{}'".format(os.path.join(cur_dir, cur_dir_file)))
-                        have_cleaned = True
                         dest_dir = os.path.join(orphan_root_dir, cur_dir)
                         if not os.path.isdir(dest_dir):
                             if not dryrun:
                                 os.makedirs(dest_dir)
                         file_to_move = os.path.join(cleandir, cur_dir, cur_dir_file)
-                        total_size += os.path.getsize(file_to_move)
                         if not dryrun:
-                            shutil.move(file_to_move, dest_dir)
-
+                            try:
+                                file_size = os.path.getsize(file_to_move)
+                                shutil.move(file_to_move, dest_dir)
+                                have_cleaned = True
+                                total_size += file_size                                
+                            except Exception as e:
+                                error(str(e))
+                                error("could not move to destination '{}'".format(os.path.join(dest_dir,cur_dir_file)))
+                        else:
+                            have_cleaned = True
+                            total_size += os.path.getsize(file_to_move)
+                        
     if have_cleaned:
         info('')
         info('total size of newly orphaned files: {}'.format(pretty_size(total_size)))
