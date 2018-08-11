@@ -16,10 +16,10 @@ Features
 * Creates a !serial.txt if the game has a special serial/cdkey (I know, not 100% DRM-free, is it?). Sometimes coupon codes are hidden here!
 * Verify your downloaded collection with full MD5, zip integrity, and expected file size checking.
 * Auto retrying of failed fetch/downloads. Sometime GOG servers report temporary errors.
-* Download resume support for interrupted downloads where possible.  
+* Download resume support for interrupted downloads where possible.
 * Ability to import your already existing local collection.
 * Easy to throw into a daily cronjob to get all the latest updates and newly added content!
-* Clear logging prints showing update/download progress and HTTP errors. Log files are created by default but can be disabled. 
+* Clear logging prints showing update/download progress and HTTP errors. Log files are created by default but can be disabled.
 
 Quick Start -- Typical Use Case
 ----------------
@@ -65,8 +65,7 @@ Commands
 ``gogrepoc.py login`` Authenticate with GOG and save the cookie locally in gog-cookies.dat file. This is needed to do
 update or download command. Run this once first before doing update and download.
 
-    login [-h] [username] [password]
-    -h, --help  show this help message and exit
+    login [username] [password]
     username    GOG username/email
     password    GOG password
 
@@ -74,61 +73,144 @@ update or download command. Run this once first before doing update and download
 
 ``gogrepoc.py update`` Fetch game data and information from GOG.com for the specified operating systems and languages. This collects file game titles, download links, serial numbers, MD5/filesize data and saves the data locally in a manifest file. Manifest is saved in a gog-manifest.dat file
 
-    update [-h] [-os [OS [OS ...]]] [-lang [LANG [LANG ...]]] [-skipknown | -updateonly | -id <title>]
-    -h, --help            show this help message and exit
-    -os [OS [OS ...]]     operating system(s) (ex. windows linux mac)
-    -lang [LANG [LANG ...]]  game language(s) (ex. en fr de)
-    -skipknown            only update new games in your library
-    -updateonly           only update games with the updated tag in your library
-    -id <title>           specify the game to update by 'title' from the manifest
-                          <title> can be found in the !info.txt of the game directory
+    update [-os [OS [OS ...]]] [-lang [LANG [LANG ...]]] [-skipknown | -updateonly | -id <title>]
+    -os [OS [OS ...]]    	operating system(s) (ex. windows linux mac)
+	-skipos				 	skip operating system(s)
+							Can't be used with -os
+    -lang [LANG [LANG ...]] game language(s) (ex. en fr de)
+	-skiplang				skip game language(s)
+							Can't be used with -lang
+	-standard				update new and updated games only (default unless -ids used)
+							Can't be used with -skipknown, -updateonly, -full
+    -skipknown            	only update new games in your library
+    -updateonly           	only update games with the updated tag in your library
+	-full				  	update all games on your account (default if -ids used)
+	-ids <title>		  	id(s)/titles(s) of (a) specific game(s) to update
+    -id <title>           	specify the game to update by 'title' from the manifest. Deprecated by -ids
+							<title> can be found in the !info.txt of the game directory
+	-skipids <title>	  	id(s)/titles(s) of (a) specific game(s) not to update
+	-resumemode			  	how to handle resuming if necessary: noresume, resume, or onlyresume. Default: resume
+	-strictverify 		  	clear previously verified unless md5 match
+	-skiphidden			  	skip games marked as hidden
+	-installers			  	GOG Installer type to use: galaxy, standalone or both. Default: standalone
+	-wait <WAIT>			wait this long in hours before starting
 
 --
 
 ``gogrepoc.py download`` Use the saved manifest file from an update command, and download all known game items and bonus files.
 
-    download [-h] [-dryrun] [-skipextras] [-skipextras] [-skipgames] [-wait WAIT] [-id <title>] [savedir]
-    -h, --help   show this help message and exit
-    -dryrun      display, but skip downloading of any files
-    -skipextras  skip downloading of any GOG extra files
-    -skipgames   skip downloading of any GOG game files
-    -wait WAIT   wait this long in hours before starting
-    -id <title>  specify the game to download by 'title' from the manifest
-                 <title> can be found in the !info.txt of the game directory
-    savedir      directory to save downloads to
-
+    download [-dryrun] [-skipextras] [-skipextras] [-skipgames] [-wait WAIT] [-id <title>] [savedir]
+    savedir      	   directory to save downloads to
+    -dryrun      	   display, but skip downloading of any files
+    -skipextras  	   skip downloading of any GOG extra files
+    -skipgames   	   skip downloading of any GOG game files. Deprecated by -skipgalaxy, -skipstandalone and -skipshared
+	-skipgalaxy  	   skip downloading Galaxy installers
+    -skipstandalone    skip downloading standlone installers
+    -skipshared 	   skip downloading installers shared between Galaxy and standalone
+	-skipfiles <file>  file name (or glob patterns) to NOT download
+    -wait <WAIT>   	   wait this long in hours before starting
+	-ids <title>	   id(s) or title(s) of the game in the manifest to download
+    -id <title>  	   specify the game to download by 'title' from the manifest. Deprecated by -ids
+					   <title> can be found in the !info.txt of the game directory
+    -skipids <title>   id(s) or title(s) of the game(s) in the manifest to NOT download, default=[])
+    -os [OS [OS ...]]  download game files only for operating system(s) (ex. windows linux mac)
+	-skipos			   skip downloading game files for operating system(s)
+					   Can't be used with -os
+    -lang [LANG [LANG ...]] download game files only for language(s) (ex. en fr de)
+	-skiplang		   skip downloading game files for language(s)
+					   Can't be used with -lang
 --
 
 ``gogrepoc.py verify`` Check all your game files against the save manifest data, and verify MD5, zip integrity, and
 expected file size. Any missing or corrupt files will be reported.
 
-    verify [-h] [-skipmd5] [-skipsize] [-skipzip] [-delete] [gamedir]
+    verify [-skipmd5] [-skipsize] [-skipzip] [-delete] [gamedir]
     gamedir     directory containing games to verify
-    -h, --help  show this help message and exit
-    -skipmd5    do not perform MD5 check
-    -skipsize   do not perform size check
-    -skipzip    do not perform zip integrity check
-    -delete     delete any files which fail integrity test
+	-forceverify (also verify files that are unchanged (by gogrepo) since they were last successfully verified)
+    -skipmd5    	   do not perform MD5 check
+    -skipsize   	   do not perform size check
+    -skipzip    	   do not perform zip integrity check
+	-skipextras  	   skip verification of any GOG extra files
+    -skipgames   	   skip verification of any GOG game files. Deprecated by -skipgalaxy, -skipstandalone and -skipshared
+	-skipgalaxy 	   skip verification of any GOG Galaxy installer files
+    -skipstandalone    skip verification of any GOG standalone installer files
+    -skipshared 	   skip verification of any installers included in both the GOG Galalaxy and Standalone sets
+	-skipfiles <file>  file name (or glob patterns) to NOT verify
+    -ids <title>	   id(s) or title(s) of the game in the manifest to verify
+    -id <title>  	   specify the game to verify by 'title' from the manifest. Deprecated by -ids
+					   <title> can be found in the !info.txt of the game directory
+    -skipids <title>   id(s) or title(s) of the game(s) in the manifest to NOT verify, default=[])
+    -os [OS [OS ...]]  verify game files only for operating system(s) (ex. windows linux mac)
+	-skipos			   skip verification of game files for operating system(s)
+					   Can't be used with -os
+    -lang [LANG [LANG ...]] verify game files only for language(s) (ex. en fr de)
+	-skiplang		   skip downloading game files for language(s)
+					   Can't be used with -lang
+	-delete    		   delete any files which fail integrity test
+	-clean 			   clean any files which fail integrity test
 
 --
 
 ``gogrepoc.py import`` Search an already existing GOG collection for game item/files, and import them to your
 new GOG folder with clean game directory names and file names as GOG has them named on their servers.
 
-    import [-h] src_dir dest_dir
-    src_dir     source directory to import games from
-    dest_dir    directory to copy and name imported files to
-    -h, --help  show this help message and exit
-
+    import [src_dir] [dest_dir]
+    src_dir     	   source directory to import games from
+    dest_dir    	   directory to copy and name imported files to
+	-skipgalaxy  	   skip importing Galaxy installers
+    -skipstandalone    skip importing standlone installers
+    -skipshared 	   skip importing installers shared between Galaxy and standalone
+	-ids <title>	   id(s) or title(s) of the game in the manifest to import
+    -skipids <title>   id(s) or title(s) of the game(s) in the manifest to NOT import, default=[])
+    -os [OS [OS ...]]  import game files only for operating system(s) (ex. windows linux mac)
+	-skipos			   skip importing game files for operating system(s)
+					   Can't be used with -os
+    -lang [LANG [LANG ...]] import game files only for language(s) (ex. en fr de)
+	-skiplang		   skip importing game files for language(s)
+					   Can't be used with -lang
 --
 
 ``gogrepoc.py backup`` Make copies of all known files in manifest file from a source directory to a backup destination directory. Useful for cleaning out older files from your GOG collection.
 
-    backup [-h] src_dir dest_dir
-    src_dir     source directory containing gog items
-    dest_dir    destination directory to backup files to
-    -h, --help  show this help message and exit
+    backup [src_dir] [dest_dir]
+    src_dir     	   source directory containing gog items
+    dest_dir    	   destination directory to backup files to
+	-skipextras  	   skip backup of any GOG extra files
+    -skipgames   	   skip backup of any GOG game files. Deprecated by -skipgalaxy, -skipstandalone and -skipshared
+	-skipgalaxy  	   skip backup of Galaxy installers
+    -skipstandalone    skip backup of standlone installers
+    -skipshared 	   skip backup of installers shared between Galaxy and standalone
+	-ids <title>	   id(s) or title(s) of the game in the manifest to backup
+    -skipids <title>   id(s) or title(s) of the game(s) in the manifest to NOT backup, default=[])
+    -os [OS [OS ...]]  backup game files only for operating system(s) (ex. windows linux mac)
+	-skipos			   skip backup of game files for operating system(s)
+					   Can't be used with -os
+    -lang [LANG [LANG ...]] backup game files only for language(s) (ex. en fr de)
+	-skiplang		   skip backup of game files for language(s)
+					   Can't be used with -lang
+--
 
+``gogrepoc.py clean`` Clean your games directory of files not known by manifest. Moves files to the !orphaned folder.
+
+    clean [-dryrun] [cleandir]
+    cleandir    root directory containing gog games to be cleaned
+    -dryrun     do not move files, only display what would be cleaned
+	
+--
+
+``gogrepoc.py trash`` Permanently remove orphaned files in your game directory.
+
+    trash [-dryrun] [-installersonly] [gamedir]
+    gamedir    		root directory containing gog games
+    -dryrun     	do not move files, only display what would be trashed
+	-installersonly only delete file types used as installers
+
+--
+
+Other arguments:
+	-h, --help  	show help message and exit. Used in all commands.
+	-nolog 			don't write to log file gogrepo.log. Used in all commands.
+	-v, --version	show version number and exit. Used in all commands.
 
 Requirements
 ------------
@@ -136,20 +218,20 @@ Requirements
 * html5lib 0.99999 or later (https://github.com/html5lib/html5lib-python)
 * requests
 * pyOpenSSL
-I recommend you use `pip` to install the above python modules. 
+I recommend you use `pip` to install the above python modules.
 
   ``pip install html5lib html2text``
 
 Optional
 ------------------------
-  
+
 * html2text 2015.6.21 or later (https://pypi.python.org/pypi/html2text) (optional, used for prettying up gog game changelog html)
-*nix:  
+*nix:
 * dbus-python and required dependencies (*nix, optional, used to prevent suspend/sleep interrupts on *nix, where supported) (this will likely move to pydbus as it matures)
 Mac:
 * caffeinate support (optional, required to prevent suspend/sleep interrupts)
-  
-  
+
+
 TODO
 ----
 * ~~add ability to update and download specific games or new-items only~~
