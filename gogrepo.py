@@ -462,6 +462,15 @@ def handle_game_renames(savedir,gamesdb,dryrun):
         os.makedirs(orphan_root_dir)
 
     for game in gamesdb:
+        try:
+            _ = game.galaxyDownloads
+        except KeyError:
+            game.galaxyDownloads = []
+            
+        try:
+            a = game.sharedDownloads
+        except KeyError:
+            game.sharedDownloads = []    
         try: 
             _ = game.old_title 
         except AttributeError:
@@ -939,9 +948,20 @@ def cmd_login(user, passwd):
         etree = html5lib.parse(page, namespaceHTMLElements=False)
         for elm in etree.findall('.//script'):
             if elm.text is not None and 'GalaxyAccounts' in elm.text:
-                login_data['auth_url'] = elm.text.split("'")[1]
-                break
-
+                authCandidates = elm.text.split("'")
+                for authCandidate in authCandidates:
+                    if 'auth' in authCandidate:
+                        testAuth = urlparse(authCandidate)
+                        if testAuth.scheme == "https":
+                            login_data['auth_url'] = authCandidate
+                            break
+                if login_data['auth_url']:
+                    break
+                
+    if not login_data['auth_url']:
+        error("cannot find auth url, please report to the maintainer")
+        exit()
+        
     # fetch the login token
     with request(login_data['auth_url'], delay=0) as page:
         etree = html5lib.parse(page, namespaceHTMLElements=False)
