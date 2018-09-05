@@ -1083,6 +1083,10 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
  
 
     gamesdb = load_manifest()
+    save_partial = partial
+    save_skipknown = skipknown
+    save_updateonly = updateonly
+    
     if not gamesdb and not skipknown and not updateonly:
         partial = False;
     
@@ -1327,7 +1331,7 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
         info('resume completed')
         if (resumemode != 'onlyresume'):
             info('returning to specified download request...')
-            cmd_update(save_os_list, save_lang_list, skipknown, updateonly, ids, skipids,skipHidden,save_installers,resumemode,save_strict)
+            cmd_update(save_os_list, save_lang_list, save_skipknown, save_updateonly, save_partial, ids, skipids,skipHidden,save_installers,resumemode,save_strict)
 
 
 def cmd_import(src_dir, dest_dir,os_list,lang_list,skipextras,skipids,ids,skipgalaxy,skipstandalone,skipshared):
@@ -1464,30 +1468,31 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
         
     downloadingdir = os.path.join(savedir, DOWNLOADING_DIR_NAME)    
     
-    info ("Cleaning up " + downloadingdir)
-    for cur_dir in sorted(os.listdir(downloadingdir)):
-        cur_fulldir = os.path.join(downloadingdir, cur_dir)
-        if os.path.isdir(cur_fulldir):
-            if cur_dir not in items_by_title:
-                #ToDo: Maybe try to rename ? Content file names will probably change when renamed (and can't be recognised by md5s as partial downloads) so maybe not wortwhile ?     
-                info("Removing outdate directory " + cur_fulldir)
-                if not dryrun:
-                    shutil.rmtree(cur_fulldir)                
-            else:
-                # dir is valid game folder, check its files
-                expected_filenames = []
-                for game_item in items_by_title[cur_dir].downloads + items_by_title[cur_dir].galaxyDownloads + items_by_title[cur_dir].sharedDownloads + items_by_title[cur_dir].extras:
-                    expected_filenames.append(game_item.name)
-                for cur_dir_file in os.listdir(cur_fulldir):
-                    if os.path.isdir(os.path.join(downloadingdir, cur_dir, cur_dir_file)):
-                        info("Removing subdirectory(?!) " + os.path.join(downloadingdir, cur_dir, cur_dir_file))                    
-                        if not dryrun:
-                            shutil.rmtree(os.path.join(downloadingdir, cur_dir, cur_dir_file)) #There shouldn't be subdirectories here ?? Nuke to keep clean.
-                    else: 
-                        if cur_dir_file not in expected_filenames:
-                            info("Removing outdated file " + os.path.join(downloadingdir, cur_dir, cur_dir_file))    
+    if os.path.isdir(downloadingdir):
+        info ("Cleaning up " + downloadingdir)
+        for cur_dir in sorted(os.listdir(downloadingdir)):
+            cur_fulldir = os.path.join(downloadingdir, cur_dir)
+            if os.path.isdir(cur_fulldir):
+                if cur_dir not in items_by_title:
+                    #ToDo: Maybe try to rename ? Content file names will probably change when renamed (and can't be recognised by md5s as partial downloads) so maybe not wortwhile ?     
+                    info("Removing outdate directory " + cur_fulldir)
+                    if not dryrun:
+                        shutil.rmtree(cur_fulldir)                
+                else:
+                    # dir is valid game folder, check its files
+                    expected_filenames = []
+                    for game_item in items_by_title[cur_dir].downloads + items_by_title[cur_dir].galaxyDownloads + items_by_title[cur_dir].sharedDownloads + items_by_title[cur_dir].extras:
+                        expected_filenames.append(game_item.name)
+                    for cur_dir_file in os.listdir(cur_fulldir):
+                        if os.path.isdir(os.path.join(downloadingdir, cur_dir, cur_dir_file)):
+                            info("Removing subdirectory(?!) " + os.path.join(downloadingdir, cur_dir, cur_dir_file))                    
                             if not dryrun:
-                                os.remove(os.path.join(downloadingdir, cur_dir, cur_dir_file))
+                                shutil.rmtree(os.path.join(downloadingdir, cur_dir, cur_dir_file)) #There shouldn't be subdirectories here ?? Nuke to keep clean.
+                        else: 
+                            if cur_dir_file not in expected_filenames:
+                                info("Removing outdated file " + os.path.join(downloadingdir, cur_dir, cur_dir_file))    
+                                if not dryrun:
+                                    os.remove(os.path.join(downloadingdir, cur_dir, cur_dir_file))
     
     
 
