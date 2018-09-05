@@ -495,7 +495,7 @@ def handle_game_renames(savedir,gamesdb,dryrun):
                 if os.path.isfile(src_file):
                     try:
                         if os.path.exists(dst_file):
-                            info("orphaning deztination clash '{}'".format(dst_file))
+                            info("orphaning destination clash '{}'".format(dst_file))
                             dest_dir = os.path.join(orphan_root_dir, game.title)
                             if not os.path.isdir(dest_dir):
                                 if not dryrun:
@@ -513,6 +513,16 @@ def handle_game_renames(savedir,gamesdb,dryrun):
             
 
 def handle_game_updates(olditem, newitem,strict):
+    try:
+        _ = olditem.galaxyDownloads
+    except KeyError:
+        olditem.galaxyDownloads = []
+        
+    try:
+        a = olditem.sharedDownloads
+    except KeyError:
+        olditem.sharedDownloads = []
+
 
     if newitem.has_updates:
         info('  -> gog flagged this game as updated')
@@ -538,26 +548,38 @@ def handle_game_updates(olditem, newitem,strict):
         for newDownload in newitem.downloads+newitem.galaxyDownloads+newitem.sharedDownloads:
             if oldDownload.md5 is not None:
                 if oldDownload.md5 == newDownload.md5 and oldDownload.size == newDownload.size and oldDownload.lang == newDownload.lang:
-                        newDownload.prev_verified = oldDownload.prev_verified         
+                        try:
+                            newDownload.prev_verified = oldDownload.prev_verified         
+                        except KeyError:
+                            newDownload.prev_verified = False
                         if oldDownload.name != newDownload.name:
                             info('  -> in title "{}" a download has changed name "{}" -> "{}"'.format(newitem.title,oldDownload.name,newDownload.name))
                             newDownload.old_name = oldDownload.name
             else:            
                 if oldDownload.size == newDownload.size and oldDownload.name == newDownload.name:
                     if not strict:
-                        newDownload.prev_verified = oldDownload.prev_verified         
+                        try:
+                            newDownload.prev_verified = oldDownload.prev_verified         
+                        except KeyError:
+                            newDownload.prev_verified = False
     for oldExtra in olditem.extras:                    
         for newExtra in newitem.extras:
             if (oldExtra.md5 != None):                
                 if oldExtra.md5 == oldExtra.md5 and oldExtra.size == newExtra.size:
                     if oldExtra.name != newExtra.name:
-                        newExtra.prev_verified = oldExtra.prev_verified
+                        try:
+                            newExtra.prev_verified = oldExtra.prev_verified
+                        except KeyError:
+                            newExtra.prev_verified = False
                         info('  -> in title "{}" an extra has changed name "{}" -> "{}"'.format(newitem.title,oldExtra.name,newExtra.name))
                         newExtra.old_name = oldExtra.name
             else:    
                 if oldExtra.name == newExtra.name and oldExtra.size == newExtra.size:
                     if not strict:
-                        newExtra.prev_verified = oldExtra.prev_verified
+                        try:
+                            newExtra.prev_verified = oldExtra.prev_verified
+                        except KeyError:
+                            newExtra.prev_verified = False
 
 def fetch_chunk_tree(response, session):
     file_ext = os.path.splitext(urlparse(response.url).path)[1].lower()
@@ -601,6 +623,7 @@ def fetch_file_info(d, fetch_md5,updateSession):
                 if e.response.status_code == 404:
                     warn("no md5 data found for {}".format(d.name))
                 else:
+                    warn("unexpected error fetching md5 data for {}".format(d.name))                
                     raise
             except xml.etree.ElementTree.ParseError:
                 warn('xml parsing error occurred trying to get md5 data for {}'.format(d.name))
@@ -640,6 +663,9 @@ def filter_downloads(out_list, downloads_list, lang_list, os_list,updateSession)
                             fetch_file_info(d, True,updateSession)
                         except requests.HTTPError:
                             warn("failed to fetch %s" % d.href)
+                        except:
+                            log_exception('')
+                            warn("failed to fetch %s because of non-HTTP Error" % d.href)                            
                         filtered_downloads.append(d)
 
     out_list.extend(filtered_downloads)
@@ -666,6 +692,9 @@ def filter_extras(out_list, extras_list,updateSession):
             fetch_file_info(d, False,updateSession)
         except requests.HTTPError:
             warn("failed to fetch %s" % d.href)
+        except:
+            log_exception('')
+            warn("failed to fetch %s because of non-HTTP Error" % d.href)                            
         filtered_extras.append(d)
 
     out_list.extend(filtered_extras)
@@ -1426,6 +1455,41 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
         exit(1)
 
     handle_game_renames(savedir,items,dryrun)
+    
+    items_by_title = {}    
+
+    # make convenient dict with title/dirname as key
+    for item in items:
+        items_by_title[item.title] = item
+        
+    downloadingdir = os.path.join(savedir, DOWNLOADING_DIR_NAME)    
+    
+    info ("Cleaning up " + downloadingdir)
+    for cur_dir in sorted(os.listdir(downloadingdir)):
+        cur_fulldir = os.path.join(downloadingdir, cur_dir)
+        if os.path.isdir(cur_fulldir):
+            if cur_dir not in items_by_title:
+                #ToDo: Maybe try to rename ? Content file names will probably change when renamed (and can't be recognised by md5s as partial downloads) so maybe not wortwhile ?     
+                info("Removing outdate directory " + cur_fulldir)
+                if not dryrun:
+                    shutil.rmtree(cur_fulldir)                
+            else:
+                # dir is valid game folder, check its files
+                expected_filenames = []
+                for game_item in items_by_title[cur_dir].downloads + items_by_title[cur_dir].galaxyDownloads + items_by_title[cur_dir].sharedDownloads + items_by_title[cur_dir].extras:
+                    expected_filenames.append(game_item.name)
+                for cur_dir_file in os.listdir(cur_fulldir):
+                    if os.path.isdir(os.path.join(downloadingdir, cur_dir, cur_dir_file)):
+                        info("Removing subdirectory(?!) " + os.path.join(downloadingdir, cur_dir, cur_dir_file))                    
+                        if not dryrun:
+                            shutil.rmtree(os.path.join(downloadingdir, cur_dir, cur_dir_file)) #There shouldn't be subdirectories here ?? Nuke to keep clean.
+                    else: 
+                        if cur_dir_file not in expected_filenames:
+                            info("Removing outdated file " + os.path.join(downloadingdir, cur_dir, cur_dir_file))    
+                            if not dryrun:
+                                os.remove(os.path.join(downloadingdir, cur_dir, cur_dir_file))
+    
+    
 
     # Find all items to be downloaded and push into work queue
     for item in sorted(items, key=lambda g: g.title):
@@ -2300,7 +2364,7 @@ def cmd_clean(cleandir, dryrun):
             info('orphaned items moved to: {}'.format(orphan_root_dir))
     else:
         info('nothing to clean. nice and tidy!')
-
+        
 def update_self():
     #To-Do: add auto-update to main using Last-Modified (repo for rolling, latest release for standard)
     #Add a dev mode which skips auto-updates and a manual update command which can specify rolling/standard
@@ -2578,7 +2642,7 @@ class DBusSystemInhibitor:
         
     def uninhibit(self):
         if (self.cookie is not None):
-            pass #It's not possible to realise this file handle in QtDBus (since the QDUnixFileDescriptor is a copy). The file handle is automatically released when the program exits. 
+            pass #It's not possible to release this file handle in QtDBus (since the QDUnixFileDescriptor is a copy). The file handle is automatically released when the program exits. 
                 
 
 
