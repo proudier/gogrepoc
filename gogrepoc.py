@@ -838,11 +838,13 @@ def process_argv(argv):
     g1.add_argument('-skipfiles', action='store', help='file name (or glob patterns) to NOT download', nargs='*', default=[])
     g1.add_argument('-wait', action='store', type=float,
                     help='wait this long in hours before starting', default=0.0)  # sleep in hr
+    g1.add_argument('-downloadlimit', action='store', type=float,
+                    help='limit downloads to this many MB (approximately)', default=None)  # sleep in hr
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
     g4.add_argument('-skipos', action='store', help='skip downloading game files for operating system(s)', nargs='*', default=[])  
-    g4.add_argument('-os', action='store', help='download game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES]) 
+    g4.add_argument('-os', action='store', help='download game files only for operating system(s)', nargs='*', default=[]) 
     g5 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
-    g5.add_argument('-lang', action='store', help='download game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES])    
+    g5.add_argument('-lang', action='store', help='download game files only for language(s)', nargs='*', default=[])    
     g5.add_argument('-skiplang', action='store', help='skip downloading game files for language(s)', nargs='*', default=[])  
     g1.add_argument('-nolog', action='store_true', help = 'doesn\'t writes log file gogrepo.log')
 
@@ -853,10 +855,10 @@ def process_argv(argv):
     g1.add_argument('dest_dir', action='store', help='directory to copy and name imported files to')
     g2 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
     g2.add_argument('-skipos', action='store', help='skip importing game files for operating system(s)', nargs='*', default=[])  
-    g2.add_argument('-os', action='store', help='import game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
+    g2.add_argument('-os', action='store', help='import game files only for operating system(s)', nargs='*', default=[])  
     g3 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
     g3.add_argument('-skiplang', action='store', help='skip importing game files for language(s)', nargs='*', default=[])        
-    g3.add_argument('-lang', action='store', help='import game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES])       
+    g3.add_argument('-lang', action='store', help='import game files only for language(s)', nargs='*', default=[])       
     #Code path available but commented out and hardcoded as false due to lack of MD5s on extras. 
     #g4 = g1.add_mutually_exclusive_group()
     #g4.add_argument('-skipextras', action='store_true', help='skip downloading of any GOG extra files')
@@ -878,10 +880,10 @@ def process_argv(argv):
     g5.add_argument('-skipids', action='store', help='id(s) or title(s) of the game(s) in the manifest to NOT backup', nargs='*', default=[])    
     g2 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
     g2.add_argument('-skipos', action='store', help='skip backup of game files for operating system(s)', nargs='*', default=[])  
-    g2.add_argument('-os', action='store', help='backup game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
+    g2.add_argument('-os', action='store', help='backup game files only for operating system(s)', nargs='*', default=[])  
     g3 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
     g3.add_argument('-skiplang', action='store', help='skip backup of game files for language(s)', nargs='*', default=[])        
-    g3.add_argument('-lang', action='store', help='backup game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES] )        
+    g3.add_argument('-lang', action='store', help='backup game files only for language(s)', nargs='*', default=[] )        
     g4 = g1.add_mutually_exclusive_group()
     g4.add_argument('-skipextras', action='store_true', help='skip backup of any GOG extra files')
     g4.add_argument('-skipgames', action='store_true', help='skip backup of any GOG game files')
@@ -906,10 +908,10 @@ def process_argv(argv):
     g1.add_argument('-skipfiles', action='store', help='file name (or glob patterns) to NOT verify', nargs='*', default=[])
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive        
     g4.add_argument('-skipos', action='store', help='skip verification of game files for operating system(s)', nargs='*', default=[])  
-    g4.add_argument('-os', action='store', help='verify game files only for operating system(s)', nargs='*', default=[x for x in VALID_OS_TYPES])  
+    g4.add_argument('-os', action='store', help='verify game files only for operating system(s)', nargs='*', default=[])  
     g5 = g1.add_mutually_exclusive_group()  # below are mutually exclusive    
     g5.add_argument('-skiplang', action='store', help='skip verification of game files for language(s)', nargs='*', default=[])        
-    g5.add_argument('-lang', action='store', help='verify game files only for language(s)', nargs='*', default=[x for x in VALID_LANG_TYPES])        
+    g5.add_argument('-lang', action='store', help='verify game files only for language(s)', nargs='*', default=[])        
     g6 = g1.add_mutually_exclusive_group()
     g6.add_argument('-skipextras', action='store_true', help='skip verification of any GOG extra files')
     g6.add_argument('-skipgames', action='store_true', help='skip verification of any GOG game files')
@@ -953,7 +955,7 @@ def process_argv(argv):
             if os_type not in VALID_OS_TYPES:
                 error('error: specified os "%s" is not one of the valid os types %s' % (os_type, VALID_OS_TYPES))
                 raise SystemExit(1)
-
+                
     return args
 
 
@@ -1415,7 +1417,7 @@ def cmd_import(src_dir, dest_dir,os_list,lang_list,skipextras,skipids,ids,skipga
             shutil.copy(f, dest_file)
 
 
-def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,skipgalaxy,skipstandalone,skipshared, skipfiles):
+def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,skipgalaxy,skipstandalone,skipshared, skipfiles,downloadLimit = None):
     sizes, rates, errors = {}, {}, {}
     work = Queue()  # build a list of work items
 
@@ -1631,7 +1633,12 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                 else:
                     info('     pass       %s' % game_item.name)
                     continue  # move on to next game item
+            
+            if downloadLimit and ((sum(sizes.values()) + game_item.size) > downloadLimit):
+                info('     skip       %s (size %s would exceed download limit (%s/%s) )' % (game_item.name, megs(game_item.size),megs(sum(sizes.values())),megs(downloadLimit)))
+                continue
 
+            
             info('     download   %s' % game_item.name)
             sizes[dest_file] = game_item.size
 
@@ -2447,12 +2454,12 @@ def main(args):
             if args.skipos:
                 args.os = [x for x in VALID_OS_TYPES if x not in args.skipos]
             else:
-                args.os = VALID_OS_TYPES
+                args.os = [x for x in VALID_OS_TYPES]
         if not args.lang:    
             if args.skiplang:
                 args.lang = [x for x in VALID_LANG_TYPES if x not in args.skiplang]
             else:
-                args.lang = VALID_LANG_TYPES
+                args.lang = [x for x in VALID_LANG_TYPES]
         if args.skipgames:
             args.skipstandalone = True
             args.skipgalaxy = True
@@ -2460,7 +2467,9 @@ def main(args):
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)
-        cmd_download(args.savedir, args.skipextras, args.skipids, args.dryrun, args.ids,args.os,args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.skipfiles)
+        if args.downloadlimit:
+            args.downloadlimit = args.downloadlimit*1024.0*1024.0 #Convert to Bytes
+        cmd_download(args.savedir, args.skipextras, args.skipids, args.dryrun, args.ids,args.os,args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.skipfiles,args.downloadlimit)
     elif args.command == 'import':
         #Hardcode these as false since extras currently do not have MD5s as such skipgames would give nothing and skipextras would change nothing. The logic path and arguments are present in case this changes, though commented out in the case of arguments)
         args.skipgames = False
