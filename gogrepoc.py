@@ -115,6 +115,7 @@ NETSCAPE_COOKIES_FILENAME = r'cookies.txt'
 NETSCAPE_COOKIES_TMP_FILENAME = r'cookies.txt.tmp'
 MANIFEST_FILENAME = r'gog-manifest.dat'
 RESUME_MANIFEST_FILENAME = r'gog-resume-manifest.dat'
+CONFIG_FILENAME = r'gog-config.dat'
 SERIAL_FILENAME = r'!serial.txt'
 INFO_FILENAME = r'!info.txt'
 
@@ -197,7 +198,7 @@ DEFAULT_LANG_LIST = [sysLang]
 
 # These file types don't have md5 data from GOG
 SKIP_MD5_FILE_EXT = ['.txt', '.zip']
-INSTALLERS_EXT = ['.exe','.bin','.dmg','.sh']
+INSTALLERS_EXT = ['.exe','.bin','.dmg','.pkg','.sh']
 
 
 ORPHAN_DIR_NAME = '!orphaned'
@@ -324,7 +325,24 @@ def load_manifest(filepath=MANIFEST_FILENAME):
     info('loading local manifest...')
     try:
         with codecs.open(filepath, 'rU', 'utf-8') as r:
-            ad = r.read().replace('{', 'AttrDict(**{').replace('}', '})')
+#            ad = r.read().replace('{', 'AttrDict(**{').replace('}', '})')
+            ad = r.read()
+            compiledregexopen =  re.compile(r"'changelog':.*?'downloads':|({)",re.DOTALL)
+            compiledregexclose = re.compile(r"'changelog':.*?'downloads':|(})",re.DOTALL)
+            def myreplacementopen(m):
+                if m.group(1):
+                   return "AttrDict(**{"
+                else:
+                   return m.group(0)
+            def myreplacementclose(m):
+                if m.group(1):
+                    return "})"
+                else:
+                    return m.group(0)
+
+            ad =  compiledregexopen.sub(myreplacementopen,ad)
+            ad =  compiledregexclose.sub(myreplacementclose,ad)
+
             if (sys.version_info[0] >= 3):
                 ad = re.sub(r"'size': ([0-9]+)L,",r"'size': \1,",ad)
         return eval(ad)
@@ -370,7 +388,30 @@ def load_resume_manifest(filepath=RESUME_MANIFEST_FILENAME):
     except IOError:
         return []
         
+def save_config_file(items):
+    info('saving config...')
+    try:
+        with codecs.open(CONFIG_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)-1), file=w)
+            pprint.pprint(items, width=123, stream=w)
+        info('saved config')                        
+    except KeyboardInterrupt:
+        with codecs.open(CONFIG_FILENAME, 'w', 'utf-8') as w:
+            print('# {} games'.format(len(items)-1), file=w)
+            pprint.pprint(items, width=123, stream=w)
+        info('saved resume manifest')            
+        raise
 
+def load_config_file(filepath=CONFIG_FILENAME):
+    info('loading config...')
+    try:
+        with codecs.open(filepath, 'rU', 'utf-8') as r:
+            ad = r.read().replace('{', 'AttrDict(**{').replace('}', '})')
+            #if (sys.version_info[0] >= 3):
+            #    ad = re.sub(r"'size': ([0-9]+)L,",r"'size': \1,",ad)
+        return eval(ad)
+    except IOError:
+        return []
 def open_notrunc(name, bufsize=4*1024):
     flags = os.O_WRONLY | os.O_CREAT
     if hasattr(os, "O_BINARY"):
@@ -808,7 +849,7 @@ def process_argv(argv):
     g3.add_argument('-lang', action='store', help='game language(s)', nargs='*', default=[])
     g3.add_argument('-skiplang', action='store', help='skip game language(s)', nargs='*', default=[])      
     g1.add_argument('-skiphidden',action='store_true',help='skip games marked as hidden')
-    g1.add_argument('-installers', action='store', choices = ['galaxy','standalone','both'], default = 'standalone',  help='GOG Installer type to use: galaxy, standalone or both. Default: standalone ')    
+    g1.add_argument('-installers', action='store', choices = ['standalone','both'], default = 'standalone',  help='GOG Installer type to use: standalone or both galaxy and standalone. Default: standalone (Deprecated)')    
     g4 = g1.add_mutually_exclusive_group()  # below are mutually exclusive
     g4.add_argument('-standard', action='store_true', help='new and updated games only (default unless -ids used)')    
     g4.add_argument('-skipknown', action='store_true', help='skip games already known by manifest')
@@ -825,9 +866,9 @@ def process_argv(argv):
     g1 = sp1.add_parser('download', help='Download all your GOG games and extra files')    
     g1.add_argument('savedir', action='store', help='directory to save downloads to', nargs='?', default='.')
     g1.add_argument('-dryrun', action='store_true', help='display, but skip downloading of any files')
-    g1.add_argument('-skipgalaxy', action='store_true', help='skip downloading Galaxy installers')
-    g1.add_argument('-skipstandalone', action='store_true', help='skip downloading standlone installers')
-    g1.add_argument('-skipshared', action = 'store_true', help ='skip downloading installers shared between Galaxy and standalone')
+    g1.add_argument('-skipgalaxy', action='store_true', help='skip downloading Galaxy installers (Deprecated)' )
+    g1.add_argument('-skipstandalone', action='store_true', help='skip downloading standlone installers (Deprecated)')
+    g1.add_argument('-skipshared', action = 'store_true', help ='skip downloading installers shared between Galaxy and standalone (Deprecated)')
     g2 = g1.add_mutually_exclusive_group()
     g2.add_argument('-skipextras', action='store_true', help='skip downloading of any GOG extra files')
     g2.add_argument('-skipgames', action='store_true', help='skip downloading of any GOG game files (deprecated, use -skipgalaxy -skipstandalone -skipshared instead)')
@@ -2446,6 +2487,8 @@ def main(args):
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)                
+        if not args.installers:
+            args.installers = "standalone"
         cmd_update(args.os, args.lang, args.skipknown, args.updateonly, not args.full, args.ids, args.skipids,args.skiphidden,args.installers,args.resumemode,args.strictverify)
     elif args.command == 'download':
         if (args.id):
