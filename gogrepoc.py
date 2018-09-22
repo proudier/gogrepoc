@@ -329,6 +329,9 @@ def load_manifest(filepath=MANIFEST_FILENAME):
             ad = r.read()
             compiledregexopen =  re.compile(r"'changelog':.*?'downloads':|({)",re.DOTALL)
             compiledregexclose = re.compile(r"'changelog':.*?'downloads':|(})",re.DOTALL)
+            compiledregexmungeopen = re.compile(r"[AttrDict(**]+{")
+            compiledregexmungeclose = re.compile(r"}\)+")
+            
             def myreplacementopen(m):
                 if m.group(1):
                    return "AttrDict(**{"
@@ -339,6 +342,12 @@ def load_manifest(filepath=MANIFEST_FILENAME):
                     return "})"
                 else:
                     return m.group(0)
+            
+            if compiledregexmungeopen.search(ad):
+                info("detected AttrDict error in manifest")
+                ad = compiledregexmungeopen.sub("{",ad)
+                ad = compiledregexmungeclose.sub("}",ad)
+                info("fixed AttrDict in manifest")                
 
             ad =  compiledregexopen.sub(myreplacementopen,ad)
             ad =  compiledregexclose.sub(myreplacementclose,ad)
