@@ -1696,7 +1696,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                     info('     pass       %s' % game_item.name)
                     continue  # move on to next game item
             
-            if downloadLimit and ((sum(sizes.values()) + game_item.size) > downloadLimit):
+            if downloadLimit is not None and ((sum(sizes.values()) + game_item.size) > downloadLimit):
                 info('     skip       %s (size %s would exceed download limit (%s/%s) )' % (game_item.name, megs(game_item.size),megs(sum(sizes.values())),megs(downloadLimit)))
                 continue
 
@@ -2533,7 +2533,7 @@ def main(args):
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)
-        if args.downloadlimit:
+        if args.downloadlimit is not None:
             args.downloadlimit = args.downloadlimit*1024.0*1024.0 #Convert to Bytes
         cmd_download(args.savedir, args.skipextras, args.skipids, args.dryrun, args.ids,args.os,args.lang,args.skipgalaxy,args.skipstandalone,args.skipshared, args.skipfiles,args.downloadlimit)
     elif args.command == 'import':
