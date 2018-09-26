@@ -443,7 +443,7 @@ def hashstream(stream,start,end):
     try:
         buf = stream.read(readlength)
         hasher.update(buf)
-    except:
+    except Exception:
         log_exception('')
         raise
     return hasher.hexdigest()
@@ -530,7 +530,7 @@ def handle_game_renames(savedir,gamesdb,dryrun):
                     info('  -> renaming directory "{}" -> "{}"'.format(src_dir, dst_dir))            
                     if not dryrun:                    
                         shutil.move(src_dir,dst_dir)
-                except: 
+                except Exception: 
                     error('    -> rename failed "{}" -> "{}"'.format(olditem.title, newitem.title))
         for item in game.downloads+game.galaxyDownloads+game.sharedDownloads+game.extras:
             try: 
@@ -555,7 +555,7 @@ def handle_game_renames(savedir,gamesdb,dryrun):
                         info('  -> renaming file "{}" -> "{}"'.format(src_file, dst_file))
                         if not dryrun:
                             shutil.move(src_file,dst_file)
-                    except:
+                    except Exception:
                         error('    -> rename failed "{}" -> "{}"'.format(src_file, dst_file))
                         if not dryrun:
                             item.prev_verified = False
@@ -713,7 +713,7 @@ def filter_downloads(out_list, downloads_list, lang_list, os_list,updateSession)
                             fetch_file_info(d, True,updateSession)
                         except requests.HTTPError:
                             warn("failed to fetch %s" % d.href)
-                        except:
+                        except Exception:
                             log_exception('')
                             warn("failed to fetch %s because of non-HTTP Error" % d.href)                            
                         filtered_downloads.append(d)
@@ -742,7 +742,7 @@ def filter_extras(out_list, extras_list,updateSession):
             fetch_file_info(d, False,updateSession)
         except requests.HTTPError:
             warn("failed to fetch %s" % d.href)
-        except:
+        except Exception:
             log_exception('')
             warn("failed to fetch %s because of non-HTTP Error" % d.href)                            
         filtered_extras.append(d)
@@ -1152,7 +1152,7 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
         resumedb = load_resume_manifest()
         resumeprops = resumedb.pop()
         needresume = resumemode != "noresume" and not resumeprops['complete']            
-    except:
+    except Exception:
         resumedb = None
         needresume = False
         
@@ -1166,6 +1166,18 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
         installers = resumeprops['installers']
         save_strict = strict
         strict = resumeprops['strict']
+        try:
+            partial = resumeprops['partial']
+        except KeyError:
+            pass
+        try:
+            skipknown = resumeprops['skipknown']
+        except KeyError:
+            pass
+        try:
+            updateonly = resumeprops['updateonly']
+        except KeyError:
+            pass
         items = resumedb
         items_count = len(items)
         print_padding = len(str(items_count))
@@ -1304,7 +1316,7 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
     # fetch item details
     i = 0
     resumedb = sorted(items, key=lambda item: item.title)
-    resumeprop = {'os_list':os_list,'lang_list':lang_list,'installers':installers,'strict':strict,'complete':False}
+    resumeprop = {'os_list':os_list,'lang_list':lang_list,'installers':installers,'strict':strict,'complete':False,'skipknown':skipknown,'partial':partial,'updateonly':updateonly}
     resumedb.append(resumeprop)
     save_resume_manifest(resumedb)                    
     
@@ -1625,33 +1637,33 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                 if hasattr(item, 'gog_messages') and item.gog_messages:
                     fd_info.write(u'{0}gog messages...:{0}'.format(os.linesep))
                     for gog_msg in item.gog_messages:
-                        fd_info.write(u'{0}{1}{0}'.format(os.linesep, html2text(gog_msg).strip()))
+                        fd_info.write(u'{0}{1}{0}'.format(os.linesep, html2text(gog_msg).strip().replace("\n",os.linesep)))
                 fd_info.write(u'{0}game items.....:{0}{0}'.format(os.linesep))
                 if len(item.downloads) > 0:
-                    fd_info.write(u'{0}..standalone...:{0}{0}'.format(os.linesep))                
+                    fd_info.write(u'{0}    standalone...:{0}{0}'.format(os.linesep))                
                 for game_item in item.downloads:
-                    fd_info.write(u'    [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
+                    fd_info.write(u'        [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
                     if game_item.version:
-                        fd_info.write(u'        version: {}{}'.format(game_item.version, os.linesep))
+                        fd_info.write(u'            version: {}{}'.format(game_item.version, os.linesep))
                 if len(item.galaxyDownloads) > 0:
-                    fd_info.write(u'{0}..galaxy.......:{0}{0}'.format(os.linesep))                                        
+                    fd_info.write(u'{0}    galaxy.......:{0}{0}'.format(os.linesep))                                        
                 for game_item in item.galaxyDownloads:
-                    fd_info.write(u'    [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
+                    fd_info.write(u'        [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
                     if game_item.version:
-                        fd_info.write(u'        version: {}{}'.format(game_item.version, os.linesep))
+                        fd_info.write(u'            version: {}{}'.format(game_item.version, os.linesep))
                 if len(item.sharedDownloads) > 0:                        
-                    fd_info.write(u'{0}..shared.......:{0}{0}'.format(os.linesep))                                        
+                    fd_info.write(u'{0}    shared.......:{0}{0}'.format(os.linesep))                                        
                 for game_item in item.sharedDownloads:
-                    fd_info.write(u'    [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
+                    fd_info.write(u'        [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
                     if game_item.version:
-                        fd_info.write(u'        version: {}{}'.format(game_item.version, os.linesep))                        
+                        fd_info.write(u'            version: {}{}'.format(game_item.version, os.linesep))                        
                 if len(item.extras) > 0:
                     fd_info.write(u'{0}extras.........:{0}{0}'.format(os.linesep))
                     for game_item in item.extras:
                         fd_info.write(u'    [{}] -- {}{}'.format(game_item.name, game_item.desc, os.linesep))
                 if item.changelog:
                     fd_info.write(u'{0}changelog......:{0}{0}'.format(os.linesep))
-                    fd_info.write(html2text(item.changelog).strip())
+                    fd_info.write(html2text(item.changelog).strip().replace("\n",os.linesep))
                     fd_info.write(os.linesep)
         # Generate and save a game serial text file
         if not dryrun:
@@ -1738,6 +1750,8 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                 responseTimer.start()
         except (requests.exceptions.ConnectionError,requests.packages.urllib3.exceptions.ProtocolError) as e:
             error("server response issue while downloading content for %s" % (path)) 
+        except (OpenSSL.SSL.Error) as e:
+            error("SSL issue while downloading content for %s" % (path))         
         responseTimer.cancel()
         #info("Exiting I/O Loop - " + path)
         return dlsz            
@@ -1775,7 +1789,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     ctypes.windll.kernel32.SetFilePointerEx(preH,c_sz,None,FILE_BEGIN)    
                                     ctypes.windll.kernel32.SetEndOfFile(preH)   
                                     ctypes.windll.kernel32.CloseHandle(preH)   
-                                except:
+                                except Exception:
                                     log_exception('')                                
                                     warn("preallocation failed")
                                     if preH != -1:
@@ -1787,7 +1801,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     with open(downloading_path, "r+b") as f:
                                         try:
                                             os.posix_fallocate(f.fileno(),0,sz)
-                                        except:    
+                                        except Exception:    
                                             warn("posix preallocation failed")
                     else:
                         if (os.path.exists(downloading_path)):
@@ -1808,7 +1822,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                         ctypes.windll.kernel32.SetFilePointerEx(preH,c_sz,None,FILE_BEGIN)    
                                         ctypes.windll.kernel32.SetEndOfFile(preH)   
                                         ctypes.windll.kernel32.CloseHandle(preH)   
-                                    except:
+                                    except Exception:
                                         log_exception('')                                
                                         warn("preallocation failed")
                                         if preH != -1:
@@ -1820,7 +1834,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                         with open(downloading_path, "r+b") as f:
                                             try:
                                                 os.posix_fallocate(f.fileno(),0,sz)
-                                            except:    
+                                            except Exception:    
                                                 warn("posix preallocation failed")
                         else:
                             if platform.system() == "Windows":
@@ -1837,7 +1851,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     ctypes.windll.kernel32.CloseHandle(preH) 
                                     #DEVNULL = open(os.devnull, 'wb')
                                     #subprocess.call(["fsutil","file","createnew",path,str(sz)],stdout=DEVNULL,stderr=DEVNULL)
-                                except:
+                                except Exception:
                                     log_exception('')                                
                                     warn("preallocation failed")
                                     if preH != -1:
@@ -1849,7 +1863,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     with open(downloading_path, "wb") as f:
                                         try:
                                             os.posix_fallocate(f.fileno(),0,sz)
-                                        except:    
+                                        except Exception:    
                                             warn("posix preallocation failed")
                 succeed = False                       
                 response = request(downloadSession,href, byte_range=(0,0),stream=False)
@@ -2014,7 +2028,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
             time.sleep(1)
     except KeyboardInterrupt:
         raise
-    except:
+    except Exception:
         with lock:
             log_exception('')
         raise
@@ -2025,7 +2039,7 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
             if not os.listdir(testdir):
                 try:
                     os.rmdir(testdir)
-                except:
+                except Exception:
                     pass
                     
 def cmd_backup(src_dir, dest_dir,skipextras,os_list,lang_list,ids,skipids,skipgalaxy,skipstandalone,skipshared):
@@ -2344,7 +2358,7 @@ def cmd_trash(cleandir,installersonly,dryrun):
                     if (not dryrun):
                         shutil.rmtree(testdir)
                     info("Deleting " + testdir)
-                except:
+                except Exception:
                     error("Failed to delete directory: " + testdir)
             else: 
                 contents = os.listdir(testdir)
@@ -2763,7 +2777,7 @@ if __name__ == "__main__":
         sys.exit(1)
     except SystemExit:
         raise
-    except:
+    except Exception:
         log_exception('fatal...')
         sys.exit(1)
     finally:
