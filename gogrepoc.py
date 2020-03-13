@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 from __future__ import print_function
@@ -343,7 +342,8 @@ def load_manifest(filepath=MANIFEST_FILENAME):
                 else:
                     return m.group(0)
             
-            if compiledregexmungeopen.search(ad):
+            mungeDetected = compiledregexmungeopen.search(ad) 
+            if mungeDetected:
                 info("detected AttrDict error in manifest")
                 ad = compiledregexmungeopen.sub("{",ad)
                 ad = compiledregexmungeclose.sub("}",ad)
@@ -354,6 +354,9 @@ def load_manifest(filepath=MANIFEST_FILENAME):
 
             if (sys.version_info[0] >= 3):
                 ad = re.sub(r"'size': ([0-9]+)L,",r"'size': \1,",ad)
+            db = eval(ad)
+            if (mungeDetected):
+                save_manifest(db)
         return eval(ad)
     except IOError:
         return []
@@ -1008,7 +1011,6 @@ def process_argv(argv):
                 
     return args
 
-
 # --------
 # Commands
 # --------
@@ -1202,6 +1204,8 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
             else:
                 info('fetching game product data (page %d / %d)...' % (i, json_data['totalPages']))
             data_response = request(updateSession,api_url,args={'mediaType': media_type,'sortBy': 'title','page': str(i)})    
+#            with open("text.html","w+",encoding='utf-8') as f:
+#                f.write(data_response.text)
             try:
                 json_data = data_response.json()
             except ValueError:
@@ -1749,9 +1753,9 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                 responseTimer = threading.Timer(HTTP_TIMEOUT,killresponse,[response])
                 responseTimer.start()
         except (requests.exceptions.ConnectionError,requests.packages.urllib3.exceptions.ProtocolError) as e:
-            error("server response issue while downloading content for %s" % (path)) 
+            error("server response issue while downloading content for %s" % (path))
         except (OpenSSL.SSL.Error) as e:
-            error("SSL issue while downloading content for %s" % (path))         
+            error("SSL issue while downloading content for %s" % (path))
         responseTimer.cancel()
         #info("Exiting I/O Loop - " + path)
         return dlsz            
@@ -2486,7 +2490,6 @@ def update_self():
     with open_notrunc('rolling.tar.gz') as w:    
         w.write(rawResponse)
 
-
 def main(args):
     stime = datetime.datetime.now()
 
@@ -2627,6 +2630,7 @@ class Wakelock:
             self._PMassertion = None 
             self._PMassertID = ctypes.c_uint32(0) 
             self._PMerrcode = None
+            self._IOPMAssertionRelease = self.libIOKit.IOPMAssertionRelease
                 
                 
     def _CFSTR(self,py_string):
@@ -2639,7 +2643,7 @@ class Wakelock:
         assertID = ctypes.c_uint32(0)
         p_assert_name = self.raw_ptr(self._CFSTR(assert_name))
         p_assert_msg = self.raw_ptr(self._CFSTR(assert_msg))
-        errcode = libIOKit.IOPMAssertionCreateWithName(p_assert_name,
+        errcode = self.libIOKit.IOPMAssertionCreateWithName(p_assert_name,
             assert_level, p_assert_msg, ctypes.byref(assertID))
         return (errcode, assertID)
                     
@@ -2676,10 +2680,11 @@ class Wakelock:
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_WAKELOCK)
         if platform.system() == "Darwin":
             a = self.PM_WAKELOCK
-            if a != self._PMassertion:
-                self.releaseWakelock()
-            if self._assertID.value ==0:
+            if self._PMassertion is not None and a != self._PMassertion:
+                self.release_wakelock()
+            if self._PMassertID.value ==0:
                 self._PMerrcode, self._PMassertID = self._IOPMAssertionCreateWithName(a,self._kIOPMAssertionLevelOn,"gogrepoc")
+                self._PMassertion = a
         if (not (platform.system() == "Windows" or platform.system() == "Darwin")) and  ('PyQt5.QtDBus' in sys.modules):
             self.inhibitor = self._get_inhibitor()
             self.inhibitor.inhibit()
@@ -2688,8 +2693,9 @@ class Wakelock:
         if platform.system() == "Windows":
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
         if platform.system() == "Darwin":
-            self._PMerrcode = self._IOPMAssertionRelease(self._assertID)
+            self._PMerrcode = self._IOPMAssertionRelease(self._PMassertID)
             self._PMassertID.value = 0
+            self._PMassertion = None
             
 class DBusSystemInhibitor:
     
