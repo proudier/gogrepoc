@@ -34,6 +34,7 @@ import re
 import OpenSSL
 import platform
 import locale
+import zlib
 from fnmatch import fnmatch
 # python 2 / 3 imports
 try:
@@ -469,9 +470,8 @@ def test_zipfile(filename):
         with zipfile.ZipFile(filename, 'r') as f:
             if f.testzip() is None:
                 return True
-    except zipfile.BadZipfile:
+    except (zipfile.BadZipfile,zlib.error):
         return False
-
     return False
 
 
@@ -510,12 +510,12 @@ def handle_game_renames(savedir,gamesdb,dryrun):
     for game in gamesdb:
         try:
             _ = game.galaxyDownloads
-        except KeyError:
+        except AttributeError:
             game.galaxyDownloads = []
             
         try:
             a = game.sharedDownloads
-        except KeyError:
+        except AttributeError:
             game.sharedDownloads = []
         try: 
             _ = game.old_title 
@@ -568,12 +568,12 @@ def handle_game_renames(savedir,gamesdb,dryrun):
 def handle_game_updates(olditem, newitem,strict):
     try:
         _ = olditem.galaxyDownloads
-    except KeyError:
+    except AttributeError:
         olditem.galaxyDownloads = []
         
     try:
         a = olditem.sharedDownloads
-    except KeyError:
+    except AttributeError:
         olditem.sharedDownloads = []
 
 
@@ -603,7 +603,7 @@ def handle_game_updates(olditem, newitem,strict):
                 if oldDownload.md5 == newDownload.md5 and oldDownload.size == newDownload.size and oldDownload.lang == newDownload.lang:
                         try:
                             newDownload.prev_verified = oldDownload.prev_verified         
-                        except KeyError:
+                        except AttributeError:
                             newDownload.prev_verified = False
                         if oldDownload.name != newDownload.name:
                             info('  -> in title "{}" a download has changed name "{}" -> "{}"'.format(newitem.title,oldDownload.name,newDownload.name))
@@ -613,7 +613,7 @@ def handle_game_updates(olditem, newitem,strict):
                     if not strict:
                         try:
                             newDownload.prev_verified = oldDownload.prev_verified         
-                        except KeyError:
+                        except AttributeError:
                             newDownload.prev_verified = False
     for oldExtra in olditem.extras:                    
         for newExtra in newitem.extras:
@@ -622,7 +622,7 @@ def handle_game_updates(olditem, newitem,strict):
                     if oldExtra.name != newExtra.name:
                         try:
                             newExtra.prev_verified = oldExtra.prev_verified
-                        except KeyError:
+                        except AttributeError:
                             newExtra.prev_verified = False
                         info('  -> in title "{}" an extra has changed name "{}" -> "{}"'.format(newitem.title,oldExtra.name,newExtra.name))
                         newExtra.old_name = oldExtra.name
@@ -631,7 +631,7 @@ def handle_game_updates(olditem, newitem,strict):
                     if not strict:
                         try:
                             newExtra.prev_verified = oldExtra.prev_verified
-                        except KeyError:
+                        except AttributeError:
                             newExtra.prev_verified = False
 
 def fetch_chunk_tree(response, session):
@@ -1124,8 +1124,6 @@ def makeGOGSession(loginSession=False):
     return gogSession
 
 def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,skipHidden,installers,resumemode,strict):
-
-    
     media_type = GOG_MEDIA_TYPE_GAME
     items = []
     known_ids = []
@@ -1419,12 +1417,12 @@ def cmd_import(src_dir, dest_dir,os_list,lang_list,skipextras,skipids,ids,skipga
     for game in gamesdb:
         try:
             _ = game.galaxyDownloads
-        except KeyError:
+        except AttributeError:
             game.galaxyDownloads = []
             
         try:
             a = game.sharedDownloads
-        except KeyError:
+        except AttributeError:
             game.sharedDownloads = []
     
     
@@ -1575,12 +1573,12 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                 
         try:
             _ = item.galaxyDownloads
-        except KeyError:
+        except AttributeError:
             item.galaxyDownloads = []
             
         try:
             a = item.sharedDownloads
-        except KeyError:
+        except AttributeError:
             item.sharedDownloads = []
 
         if skipextras:
@@ -2055,12 +2053,12 @@ def cmd_backup(src_dir, dest_dir,skipextras,os_list,lang_list,ids,skipids,skipga
         
         try:
             _ = game.galaxyDownloads
-        except KeyError:
+        except AttributeError:
             game.galaxyDownloads = []
             
         try:
             a = game.sharedDownloads
-        except KeyError:
+        except AttributeError:
             game.sharedDownloads = []
         
 
@@ -2194,13 +2192,13 @@ def cmd_verify(gamedir, skipextras, skipids,  check_md5, check_filesize, check_z
         game_changed = False
         try:
             _ = game.galaxyDownloads
-        except KeyError:
+        except AttributeError:
             game.galaxyDownloads = []
             game_changed = True;
             
         try:
             a = game.sharedDownloads
-        except KeyError:
+        except AttributeError:
             game.sharedDownloads = []
             game_changed = True;
             
