@@ -1688,11 +1688,12 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
             dest_file = os.path.join(item_homedir, game_item.name)
             downloading_file = os.path.join(item_downloaddir, game_item.name)
 
+            if game_item.size is None:
+                warn('     unknown    %s has no size info.  skipping' % game_item.name)
+                continue
+
             if os.path.isfile(dest_file):
-                if game_item.size is None:
-                    warn('     unknown    %s has no size info.  skipping' % game_item.name)
-                    continue
-                elif game_item.size != os.path.getsize(dest_file):
+                if game_item.size != os.path.getsize(dest_file):
                     warn('     fail       %s has incorrect size.' % game_item.name)
                 else:
                     info('     pass       %s' % game_item.name)
