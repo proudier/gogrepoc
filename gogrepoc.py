@@ -534,7 +534,7 @@ def handle_game_renames(savedir,gamesdb,dryrun):
                     if not dryrun:                    
                         shutil.move(src_dir,dst_dir)
                 except Exception: 
-                    error('    -> rename failed "{}" -> "{}"'.format(olditem.title, newitem.title))
+                    error('    -> rename failed "{}" -> "{}"'.format(game.old_title, game.title))
         for item in game.downloads+game.galaxyDownloads+game.sharedDownloads+game.extras:
             try: 
                 _ = item.old_name 
@@ -2614,7 +2614,7 @@ class Wakelock:
             self.ES_SYSTEM_REQUIRED   = 0x00000001
             self.ES_DISPLAY_REQUIRED  = 0x00000002
             #Windows is not particularly consistent on what is required for a wakelock for a script that often uses a USB device, so define WAKELOCK for easy changing. This works on Windows 10 as of the October 2017 update.  
-            self.ES_WAKELOCK = self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
+            self.ES_WAKELOCK = self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED | self.ES_DISPLAY_REQUIRED
             
         if (platform.system() == "Darwin"):
             
