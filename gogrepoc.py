@@ -2633,7 +2633,7 @@ class Wakelock:
                 
                 
     def _CFSTR(self,py_string):
-        return CoreFoundation.CFStringCreateWithCString(None, py_string, CoreFoundation.kCFStringEncodingASCII)
+        return CoreFoundation.CFStringCreateWithCString(None, py_string.encode('utf-8'), CoreFoundation.kCFStringEncodingUTF8)
 
     def raw_ptr(self,pyobjc_string):
         return objc.pyobjc_id(pyobjc_string.nsstring())
