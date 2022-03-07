@@ -41,14 +41,14 @@ try:
     # python 2
     from Queue import Queue
     import cookielib as cookiejar
-    from urlparse import urlparse,unquote
+    from urlparse import urlparse,unquote,urlunparse
     from itertools import izip_longest as zip_longest
     from StringIO import StringIO
 except ImportError:
     # python 3
     from queue import Queue
     import http.cookiejar as cookiejar
-    from urllib.parse import urlparse, unquote
+    from urllib.parse import urlparse, unquote, urlunparse
     from itertools import zip_longest
     from io import StringIO
     
@@ -638,7 +638,7 @@ def fetch_chunk_tree(response, session):
     file_ext = os.path.splitext(urlparse(response.url).path)[1].lower()
     if file_ext not in SKIP_MD5_FILE_EXT:
         try:
-            chunk_url = response.url.replace('?', '.xml?')
+            chunk_url = append_xml_extension_to_url_path(response.url)
             chunk_response = request(session,chunk_url)
             shelf_etree = xml.etree.ElementTree.fromstring(chunk_response.content)
             return  shelf_etree
@@ -668,7 +668,7 @@ def fetch_file_info(d, fetch_md5,updateSession):
         file_ext = os.path.splitext(urlparse(response.url).path)[1].lower()
         if file_ext not in SKIP_MD5_FILE_EXT:
             try:
-                tmp_md5_url = response.url.replace('?', '.xml?')
+                tmp_md5_url = append_xml_extension_to_url_path(response.url)
                 md5_response = request(updateSession,tmp_md5_url)
                 shelf_etree = xml.etree.ElementTree.fromstring(md5_response.content)
                 d.md5 = shelf_etree.attrib['md5']
@@ -839,6 +839,9 @@ def is_numeric_id(s):
     except ValueError:
         return False    
 
+def append_xml_extension_to_url_path(url):
+    parsed = urlparse(url)
+    return urlunparse(parsed._replace(path = parsed.path + ".xml"))
 
 def process_argv(argv):
     p1 = argparse.ArgumentParser(description='%s (%s)' % (__appname__, __url__), add_help=False)
