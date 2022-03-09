@@ -651,6 +651,10 @@ def fetch_chunk_tree(response, session):
         except xml.etree.ElementTree.ParseError:
             warn('xml parsing error occurred trying to get md5 data for {}'.format(chunk_url))
             return None
+        except requests.exceptions.ConnectionError as e:
+            warn("unexpected connection error fetching md5 data for {}".format(chunk_url) + " This error may be temporary. Please retry in 24 hours.")
+            #raise
+            return None 
     return None
 
 def fetch_file_info(d, fetch_md5,updateSession):
@@ -680,7 +684,9 @@ def fetch_file_info(d, fetch_md5,updateSession):
                     raise
             except xml.etree.ElementTree.ParseError:
                 warn('xml parsing error occurred trying to get md5 data for {}'.format(d.name))
-
+            except requests.exceptions.ConnectionError as e:
+                    warn("unexpected connection error fetching md5 data for {}".format(d.name) + " This error may be temporary. Please retry in 24 hours.")
+                    #raise
 
 def filter_downloads(out_list, downloads_list, lang_list, os_list,updateSession):
     """filters any downloads information against matching lang and os, translates
