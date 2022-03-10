@@ -197,7 +197,7 @@ DEFAULT_LANG_LIST = [sysLang]
 #    DEFAULT_LANG_LIST.push(DEFAULT_FALLBACK_LANG)
 
 # These file types don't have md5 data from GOG
-SKIP_MD5_FILE_EXT = ['.txt', '.zip']
+SKIP_MD5_FILE_EXT = ['.txt', '.zip','.tar.gz','']
 INSTALLERS_EXT = ['.exe','.bin','.dmg','.pkg','.sh']
 
 
@@ -645,15 +645,29 @@ def fetch_chunk_tree(response, session):
         except requests.HTTPError as e:
             if e.response.status_code == 404:
                 warn("no md5 data found for {}".format(chunk_url))
-                return None
             else:
-                raise
+                warn("unexpected error fetching md5 data for {}".format(chunk_url))                
+            warn("The handled exception was:")
+            log_exception('')
+            warn("End exception report.")
+            return None
         except xml.etree.ElementTree.ParseError:
             warn('xml parsing error occurred trying to get md5 data for {}'.format(chunk_url))
+            warn("The handled exception was:")
+            log_exception('')
+            warn("End exception report.")
             return None
         except requests.exceptions.ConnectionError as e:
             warn("unexpected connection error fetching md5 data for {}".format(chunk_url) + " This error may be temporary. Please retry in 24 hours.")
-            #raise
+            warn("The handled exception was:")
+            log_exception('')
+            warn("End exception report.")
+            return None 
+        except requests.exceptions.ContentDecodingError as e:
+            warn("unexpected content decoding error fetching md5 data for {}".format(chunk_url) + " This error may be temporary. Please retry in 24 hours.")
+            warn("The handled exception was:")
+            log_exception('')
+            warn("End exception report.")
             return None 
     return None
 
@@ -681,12 +695,24 @@ def fetch_file_info(d, fetch_md5,updateSession):
                     warn("no md5 data found for {}".format(d.name))
                 else:
                     warn("unexpected error fetching md5 data for {}".format(d.name))                
-                    raise
-            except xml.etree.ElementTree.ParseError:
+                warn("The handled exception was:")
+                log_exception('')
+                warn("End exception report.")
+            except xml.etree.ElementTree.ParseError as e:
                 warn('xml parsing error occurred trying to get md5 data for {}'.format(d.name))
+                warn("The handled exception was:")
+                log_exception('')
+                warn("End exception report.")
             except requests.exceptions.ConnectionError as e:
-                    warn("unexpected connection error fetching md5 data for {}".format(d.name) + " This error may be temporary. Please retry in 24 hours.")
-                    #raise
+                warn("unexpected connection error fetching md5 data for {}".format(d.name) + " This error may be temporary. Please retry in 24 hours.")
+                warn("The handled exception was:")
+                log_exception('')
+                warn("End exception report.")
+            except requests.exceptions.ContentDecodingError as e:
+                warn("unexpected content decoding error fetching md5 data for {}".format(d.name) + " This error may be temporary. Please retry in 24 hours.")
+                warn("The handled exception was:")
+                log_exception('')
+                warn("End exception report.")
 
 def filter_downloads(out_list, downloads_list, lang_list, os_list,updateSession):
     """filters any downloads information against matching lang and os, translates
@@ -723,8 +749,10 @@ def filter_downloads(out_list, downloads_list, lang_list, os_list,updateSession)
                         except requests.HTTPError:
                             warn("failed to fetch %s" % d.href)
                         except Exception:
-                            log_exception('')
                             warn("failed to fetch %s because of non-HTTP Error" % d.href)                            
+                            warn("The handled exception was:")
+                            log_exception('')
+                            warn("End exception report.")
                         filtered_downloads.append(d)
 
     out_list.extend(filtered_downloads)
@@ -752,8 +780,10 @@ def filter_extras(out_list, extras_list,updateSession):
         except requests.HTTPError:
             warn("failed to fetch %s" % d.href)
         except Exception:
-            log_exception('')
             warn("failed to fetch %s because of non-HTTP Error" % d.href)                            
+            warn("The handled exception was:")
+            log_exception('')
+            warn("End exception report.")
         filtered_extras.append(d)
 
     out_list.extend(filtered_extras)
@@ -1392,7 +1422,9 @@ def cmd_update(os_list, lang_list, skipknown, updateonly, partial, ids, skipids,
             else:
                 gamesdb.append(item)
         except Exception:
+            warn("The handled exception was:")
             log_exception('error')
+            warn("End exception report.")        
         resumedb.remove(item)    
         if (updateonly or skipknown or (resumedbInitLength - len(resumedb)) % RESUME_SAVE_THRESHOLD == 0):
             save_manifest(gamesdb)                
@@ -1802,8 +1834,10 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     ctypes.windll.kernel32.SetEndOfFile(preH)   
                                     ctypes.windll.kernel32.CloseHandle(preH)   
                                 except Exception:
-                                    log_exception('')                                
                                     warn("preallocation failed")
+                                    warn("The handled exception was:")
+                                    log_exception('')
+                                    warn("End exception report.")
                                     if preH != -1:
                                         info('failed - closing outstanding handle')
                                         ctypes.windll.kernel32.CloseHandle(preH) 
@@ -1835,8 +1869,10 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                         ctypes.windll.kernel32.SetEndOfFile(preH)   
                                         ctypes.windll.kernel32.CloseHandle(preH)   
                                     except Exception:
-                                        log_exception('')                                
                                         warn("preallocation failed")
+                                        warn("The handled exception was:")
+                                        log_exception('')
+                                        warn("End exception report.")
                                         if preH != -1:
                                             info('failed - closing outstanding handle')
                                             ctypes.windll.kernel32.CloseHandle(preH) 
@@ -1864,8 +1900,10 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                     #DEVNULL = open(os.devnull, 'wb')
                                     #subprocess.call(["fsutil","file","createnew",path,str(sz)],stdout=DEVNULL,stderr=DEVNULL)
                                 except Exception:
-                                    log_exception('')                                
                                     warn("preallocation failed")
+                                    warn("The handled exception was:")
+                                    log_exception('')
+                                    warn("End exception report.")
                                     if preH != -1:
                                         info('failed - closing outstanding handle')
                                         ctypes.windll.kernel32.CloseHandle(preH) 
@@ -1947,7 +1985,9 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                                         retries = -1
                                                 except Exception as e:
                                                      with lock:
-                                                        log_exception('')                                
+                                                        warn("The unhandled exception was:")
+                                                        log_exception('')
+                                                        warn("End exception report.")
                                                         raise
                 else:
                     with open_notrunc(downloading_path) as out:
@@ -1988,7 +2028,9 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                                 retries = -1
                             except Exception as e:
                                  with lock:
-                                    log_exception('')                                
+                                    warn("The unhandled exception was:")
+                                    log_exception('')
+                                    warn("End exception report.")
                                     raise
                 if succeed and sizes[path]==0:
                     with lock:
@@ -1999,12 +2041,16 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
                         info("not moving uncompleted download '%s', success: %s remaining bytes: %d / %d " % (downloading_path,str(succeed),sizes[path],sz))
             except IOError as e:
                 with lock:
-                    log_exception('')                                
+                    warn("The handled exception was:")
+                    log_exception('')
+                    warn("End exception report.")
                     print('!', path, file=sys.stderr)
                     errors.setdefault(path, []).append(e)
             except Exception as e:
                  with lock:
-                    log_exception('')                                
+                    warn("The unhandled exception was:")
+                    log_exception('')
+                    warn("End exception report.")
                     raise
             #debug 
             #info("thread completed")
@@ -2042,7 +2088,9 @@ def cmd_download(savedir, skipextras,skipids, dryrun, ids,os_list, lang_list,ski
         raise
     except Exception:
         with lock:
+            warn("The unhandled exception was:")
             log_exception('')
+            warn("End exception report.")
         raise
         
     for dir in os.listdir(downloading_root_dir):
