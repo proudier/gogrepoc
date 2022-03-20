@@ -1,7 +1,6 @@
 *.pyc
 *.bat
 *.dat
-*.dat.bak
 *.log
 *.log.*
 .idea
