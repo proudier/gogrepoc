@@ -40,6 +40,17 @@ Quick Start -- Typical Use Case
 
   ``gogrepoc.py verify``
 
+Running in a (Docker) container
+----------------
+
+* The python script and all its dependencies is also available as a container image. Only a container engine like [Docker](https://docs.docker.com/engine/) or [Podman](https://docs.podman.io/en/latest/index.html) need to be installed.
+
+  ``docker run ghcr.io/proudier/gogrepoc:docker update``
+
+* The working directory in the container is `/srv`, so unless you specify a volume, the files will be downloaded there but will be lost when the container is deleted.
+
+  ``docker run --rm -v /tank/gogrepo:/srv ghcr.io/proudier/gogrepoc:docker update``
+
 Advanced Usage -- Common Tasks
 ----------------
 
@@ -68,6 +79,18 @@ update or download command. Run this once first before doing update and download
     login [username] [password]
     username    GOG username/email
     password    GOG password
+
+
+If the login fails because of a reCatch, log to gog.com in a browser and extract the values of the following cookies:
+- sessions_gog_com
+- gog-al
+
+Then use this template to generate the gog-cookies.dat file (replace the `REPLACE_ME`):
+
+```
+Set-Cookie3: sessions_gog_com="REPLACE_ME"; path="/"; domain=".gog.com"; path_spec; domain_dot; expires="2023-03-26 13:18:33Z"; httponly=true; secure=true; version=0
+Set-Cookie3: gog-al="REPLACE_ME"; path="/"; domain=".gog.com"; path_spec; domain_dot; expires="2023-03-26 13:18:33Z"; httponly=true; secure=true; version=0
+```
 
 --
 
@@ -195,7 +218,7 @@ new GOG folder with clean game directory names and file names as GOG has them na
     clean [-dryrun] [cleandir]
     cleandir    root directory containing gog games to be cleaned
     -dryrun     do not move files, only display what would be cleaned
-	
+
 --
 
 ``gogrepoc.py trash`` Permanently remove orphaned files in your game directory.
