@@ -2,7 +2,7 @@ name: Container image
 
 on:
   push:
-    branches: main
+    branches: [ "docker", "main" ]
 
 jobs:
   container:
